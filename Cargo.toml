@@ -21,7 +21,7 @@ pcap = ["pnet/pcap"]
 
 [dependencies]
 hashbrown = "0.11"
-deku = { version = "0.12", default-features = false, features = ["alloc"] }
+deku = { version = "0.20", default-features = false, features = ["alloc"] }
 pnet = { version = "0.28", optional = true }
 pcap-file = { version = "1.1.1", optional = true }
 chrono = { version = "0.4", optional = true }
