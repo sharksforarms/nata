@@ -1,0 +1,10 @@
+services:
+  build:
+    environment:
+      # Incremental artifacts are large and do not archive efficiently on CI.
+      CARGO_INCREMENTAL: "0"
+    volumes:
+      - .:/workspace
+      - ./.ci-cache/cargo-registry:/usr/local/cargo/registry
+      - ./.ci-cache/cargo-git:/usr/local/cargo/git
+      - ./.ci-cache/target:/workspace/target

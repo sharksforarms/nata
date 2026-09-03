@@ -1,0 +1,24 @@
+name: hatchet
+
+services:
+  build:
+    image: hatchet-build:1.98
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    working_dir: /workspace
+    environment:
+      CARGO_HOME: /usr/local/cargo
+      CARGO_TARGET_DIR: /workspace/target
+      CARGO_TERM_COLOR: always
+    volumes:
+      - .:/workspace
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - cargo-target:/workspace/target
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:

@@ -1,147 +1,66 @@
-on: [push, pull_request]
-
 name: CI
 
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
-    name: Build
+  checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Install libpcap
-        run: sudo apt-get -y install libpcap-dev
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all --features pcap
+      - uses: actions/checkout@v7
 
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Install libpcap
-        run: sudo apt-get -y install libpcap-dev
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all --features pcap
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-  test_miri:
-    name: Miri Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - name: Build the shared build environment
+        uses: docker/build-push-action@v7
         with:
-          toolchain: nightly
-          override: true
-          components: miri
-      - name: Install libpcap
-        run: sudo apt-get -y install libpcap-dev
-      - run: cargo miri test --features pcap
+          context: .
+          load: true
+          tags: hatchet-build:1.98
+          cache-from: type=gha,scope=hatchet-build-environment
+          cache-to: type=gha,mode=max,scope=hatchet-build-environment
 
-  test_miri_big_endian:
-    name: Miri Test Big Endian
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - name: Restore Cargo build cache
+        uses: actions/cache@v5
         with:
-          toolchain: nightly
-          override: true
-          components: miri
-          target: mips64-unknown-linux-gnuabi64
-      - name: Install libpcap
-        run: sudo apt-get -y install libpcap-dev
-      - run: cargo miri test --target mips64-unknown-linux-gnuabi64 --features pcap
+          path: |
+            .ci-cache/cargo-registry
+            .ci-cache/cargo-git
+            .ci-cache/target/.rustc_info.json
+            .ci-cache/target/debug
+            .ci-cache/target/wasm32-unknown-unknown
+          key: hatchet-cargo-v2-${{ runner.os }}-ci-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'Dockerfile', 'compose.yaml', 'compose.ci.yaml', 'Justfile') }}
+          restore-keys: |
+            hatchet-cargo-v2-${{ runner.os }}-ci-
 
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - name: Create cache directories
+        run: mkdir -p .ci-cache/cargo-registry .ci-cache/cargo-git .ci-cache/target
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Install libpcap
-        run: sudo apt-get -y install libpcap-dev
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --features pcap -- -D warnings
-
-  ensure_no_std:
-    name: Ensure no_std
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-      - run: cd ensure_no_std && cargo run --release
-
-  ensure_wasm:
-    name: Ensure wasm
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-      - uses: jetli/wasm-pack-action@v0.3.0
-        with:
-          version: 'latest'
-      - run: cd ensure_wasm && wasm-pack build --target web && wasm-pack test --node
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop
-      options: --security-opt seccomp=unconfined
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Install libpcap
-        run: apt-get update && apt-get -y install libpcap-dev
+      - name: Run CI checks
+        run: docker compose -f compose.yaml -f compose.ci.yaml run --rm build just ci
 
       - name: Generate code coverage
-        run: |
-          cargo tarpaulin --verbose --features pcap --workspace --timeout 120 --out Xml
+        run: docker compose -f compose.yaml -f compose.ci.yaml run --rm build just coverage
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: true
+
+      # Cargo runs as root in the container, while actions/cache archives files
+      # as the host runner user. Normalize ownership before its post-job save.
+      - name: Prepare Cargo cache for upload
+        if: always()
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" .ci-cache
+          chmod -R u+rwX .ci-cache
