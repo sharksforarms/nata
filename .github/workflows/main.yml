@@ -36,6 +36,8 @@ jobs:
             .ci-cache/cargo-git
             .ci-cache/target/.rustc_info.json
             .ci-cache/target/debug
+            .ci-cache/target/thumbv6m-none-eabi
+            .ci-cache/target/thumbv7em-none-eabihf
             .ci-cache/target/wasm32-unknown-unknown
           key: hatchet-cargo-v2-${{ runner.os }}-ci-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'Dockerfile', 'compose.yaml', 'compose.ci.yaml', 'Justfile') }}
           restore-keys: |

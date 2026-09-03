@@ -17,7 +17,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup component add clippy rustfmt llvm-tools-preview \
-    && rustup target add wasm32-unknown-unknown
+    && rustup target add \
+        thumbv7em-none-eabihf \
+        thumbv6m-none-eabi \
+        wasm32-unknown-unknown
 
 RUN --mount=type=cache,id=hatchet-tools-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=hatchet-tools-git,target=/usr/local/cargo/git,sharing=locked \

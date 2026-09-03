@@ -22,20 +22,25 @@ providing strongly typed protocol layers and symmetric binary serialization.
   PCAP files.
 - Compile the core packet and layer APIs without `std`.
 
-## Installation
+## Usage
 
 ```toml
 [dependencies]
 hatchet = "0.1"
 ```
 
-The default features include the standard-library and libpcap integrations.
-Disable them when only the `no_std` packet APIs are needed:
+Disable the default standard-library integrations for `no_std` applications:
 
 ```toml
 [dependencies]
 hatchet = { version = "0.1", default-features = false }
 ```
+
+Hatchet's packet representation uses allocation-backed types, so the
+application must provide an allocator. The
+[`example_no_std`](example_no_std/README.md) fixture demonstrates this in a
+real Cortex-M application and is cross-compiled for two bare-metal targets in
+CI.
 
 ## Quick start
 
@@ -98,6 +103,57 @@ fn main() {
 ```
 
 The same program is available as [`examples/build_packet.rs`](examples/build_packet.rs).
+
+See the [API documentation](https://docs.rs/hatchet) and
+[examples](https://github.com/sharksforarms/hatchet/tree/master/examples) for
+custom layers, offline PCAP processing, and live packet capture and injection.
+
+## Cargo features
+
+The default feature set selects `std` and `pcap`.
+
+| Feature | Default | Description |
+| --- | --- | --- |
+| `std` | Yes | Standard-library data-link APIs, including pnet live interfaces and offline PCAP file I/O |
+| `pcap` | Yes | Live packet capture and injection through libpcap; used together with `std` |
+| `netmap` | No | Enables pnet's netmap backend; used together with `std` |
+
+To use offline PCAP files and pnet interfaces without linking libpcap, enable
+only `std`:
+
+```toml
+[dependencies]
+hatchet = { version = "0.1", default-features = false, features = ["std"] }
+```
+
+Netmap support is opt-in:
+
+```toml
+[dependencies]
+hatchet = { version = "0.1", default-features = false, features = ["std", "netmap"] }
+```
+
+The live backends have native prerequisites: `pcap` requires the libpcap
+library and development headers, while `netmap` requires a netmap-enabled
+system and its headers. Offline PCAP file I/O does not require either backend.
+
+## `no_std`
+
+Hatchet's packet, parser, and protocol-layer APIs support `no_std` with
+allocation. Disable the default features to remove the standard-library,
+live-interface, and PCAP-file integrations:
+
+```toml
+[dependencies]
+hatchet = { version = "0.1", default-features = false }
+```
+
+The core API uses allocation-backed types such as `Box` and `Vec`, so embedded
+targets must provide a global allocator. Packet parsing, construction,
+serialization, finalization, and custom layers remain available. The
+[`example_no_std`](example_no_std) crate is built by CI to verify this
+configuration. The same core-only configuration is also used by the
+[`example_wasm`](example_wasm) WebAssembly fixture.
 
 ## Built-in layers
 
