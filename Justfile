@@ -7,7 +7,7 @@ pipeline := env_var_or_default("NATA_TOOLCHAIN", "stable")
 toolchain := if pipeline == "msrv" { msrv } else if pipeline == "stable" { stable } else if pipeline == "beta" { beta } else { pipeline }
 
 # Portable feature combinations; netmap needs platform-specific headers.
-feature_matrix := "std pcap std,pcap"
+feature_matrix := "std libpcap std,libpcap"
 
 # List the available build commands.
 default:
@@ -34,7 +34,7 @@ lint:
     cargo +{{stable}} fmt --manifest-path example_wasm/Cargo.toml -- --check
     cargo +{{stable}} clippy --all-targets -- -D warnings
     cargo +{{stable}} clippy --no-default-features --all-targets -- -D warnings
-    cargo +{{stable}} clippy --no-default-features --features="std,pcap" --all-targets -- -D warnings
+    cargo +{{stable}} clippy --no-default-features --features="std,libpcap" --all-targets -- -D warnings
     cargo +{{stable}} clippy --manifest-path example_no_std/Cargo.toml --lib -- -D warnings
     cargo +{{stable}} clippy --manifest-path example_wasm/Cargo.toml --lib -- -D warnings
 

@@ -29,18 +29,8 @@ providing strongly typed protocol layers and symmetric binary serialization.
 nata = "0.1"
 ```
 
-Disable the default standard-library integrations for `no_std` applications:
-
-```toml
-[dependencies]
-nata = { version = "0.1", default-features = false }
-```
-
-Nata's packet representation uses allocation-backed types, so the
-application must provide an allocator. The
-[`example_no_std`](example_no_std/README.md) fixture demonstrates this in a
-real Cortex-M application and is cross-compiled for two bare-metal targets in
-CI.
+See [Cargo features](#cargo-features) for optional integrations and `no_std`
+configuration.
 
 ## Quick start
 
@@ -110,12 +100,13 @@ custom layers, offline PCAP processing, and live packet capture and injection.
 
 ## Cargo features
 
-The default feature set selects `std` and `pcap`.
+The default feature set selects `std`. Live libpcap capture is opt-in through
+the `libpcap` feature.
 
 | Feature | Default | Description |
 | --- | --- | --- |
 | `std` | Yes | Standard-library data-link APIs, including pnet live interfaces and offline PCAP file I/O |
-| `pcap` | Yes | Live packet capture and injection through libpcap; used together with `std` |
+| `libpcap` | No | Live packet capture and injection through libpcap; used together with `std` |
 | `netmap` | No | Enables pnet's netmap backend; used together with `std` |
 
 To use offline PCAP files and pnet interfaces without linking libpcap, enable
@@ -133,27 +124,21 @@ Netmap support is opt-in:
 nata = { version = "0.1", default-features = false, features = ["std", "netmap"] }
 ```
 
-The live backends have native prerequisites: `pcap` requires the libpcap
-library and development headers, while `netmap` requires a netmap-enabled
-system and its headers. Offline PCAP file I/O does not require either backend.
-
-## `no_std`
-
-Nata's packet, parser, and protocol-layer APIs support `no_std` with
-allocation. Disable the default features to remove the standard-library,
-live-interface, and PCAP-file integrations:
+To use Nata without `std`:
 
 ```toml
 [dependencies]
 nata = { version = "0.1", default-features = false }
 ```
 
-The core API uses allocation-backed types such as `Box` and `Vec`, so embedded
-targets must provide a global allocator. Packet parsing, construction,
-serialization, finalization, and custom layers remain available. The
-[`example_no_std`](example_no_std) crate is built by CI to verify this
-configuration. The same core-only configuration is also used by the
-[`example_wasm`](example_wasm) WebAssembly fixture.
+Nata's packet representation uses allocation-backed types, so the application
+must provide an allocator. The [`example_no_std`](example_no_std/README.md)
+fixture demonstrates this in a real Cortex-M application and is
+cross-compiled for two bare-metal targets in CI.
+
+The live backends have native prerequisites: `libpcap` requires the libpcap
+library and development headers, while `netmap` requires a netmap-enabled
+system and its headers. Offline PCAP file I/O does not require either backend.
 
 ## Built-in layers
 
@@ -174,7 +159,7 @@ allowing application protocols to participate in the same parsing pipeline.
 
 With `std` enabled, Nata provides a common interface abstraction for:
 
-- Live packet capture and injection through libpcap (`pcap` feature).
+- Live packet capture and injection through libpcap (`libpcap` feature).
 - Live interfaces through pnet.
 - Offline PCAP file reading and writing.
 

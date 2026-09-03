@@ -12,13 +12,13 @@ description = "Network packet manipulation toolkit"
 readme = "README.md"
 
 [package.metadata.docs.rs]
-features = ["pnet", "pcap", "netmap"]
+features = ["pnet", "libpcap", "netmap"]
 
 [features]
 netmap = ["pnet/netmap"]
 default = ["std"]
 std = ["pnet", "pcap-file"]
-pcap = ["pnet/pcap"]
+libpcap = ["pnet/pcap"]
 
 [dependencies]
 hashbrown = "0.17"
@@ -41,12 +41,12 @@ required-features = ["std"]
 
 [[example]]
 name = "icmp_ping"
-required-features = ["std", "pcap"]
+required-features = ["std", "libpcap"]
 
 [[example]]
 name = "read_write_interface"
-required-features = ["std", "pcap"]
+required-features = ["std", "libpcap"]
 
 [[example]]
 name = "spoof_http_server"
-required-features = ["std", "pcap"]
+required-features = ["std", "libpcap"]
