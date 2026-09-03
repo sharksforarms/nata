@@ -10,19 +10,15 @@ pub use ipv4::Ipv4;
 pub use ipv6::Ipv6;
 pub use protocols::IpProtocol;
 
-use core::convert::TryInto;
-
 /// 16-bit ip checksum
 pub fn checksum(input: &[u8]) -> u16 {
     let mut sum = 0x00;
-    let mut chunks_iter = input.chunks_exact(2);
-    for chunk in &mut chunks_iter {
-        sum += u32::from(u16::from_be_bytes(
-            chunk.try_into().expect("chunks of 2 bytes"),
-        ));
+    let (chunks, remainder) = input.as_chunks::<2>();
+    for chunk in chunks {
+        sum += u32::from(u16::from_be_bytes(*chunk));
     }
 
-    if let [rem] = chunks_iter.remainder() {
+    if let [rem] = remainder {
         sum += u32::from(u16::from_be_bytes([*rem, 0x00]));
     }
 
@@ -44,7 +40,7 @@ mod tests {
         case::validate_rem(&hex!("45000073000040004011 0E61 c0a80001c0a800c7aa"), 0x0000),
     )]
     fn test_checksum(input: &[u8], expected: u16) {
-        let chksum = checksum(&input);
+        let chksum = checksum(input);
         assert_eq!(expected, chksum);
     }
 }

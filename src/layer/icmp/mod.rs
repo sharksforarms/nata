@@ -3,7 +3,7 @@ ICMP layer
 */
 
 use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
-use alloc::{format, vec::Vec};
+use alloc::vec::Vec;
 use deku::prelude::*;
 
 mod icmp_type;
@@ -37,7 +37,7 @@ pub struct Icmp4 {
     /// Message
     pub message: u32,
     /// Data
-    #[deku(count = "deku::rest.len() / 8")]
+    #[deku(read_all)]
     pub data: Vec<u8>,
 }
 

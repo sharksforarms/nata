@@ -6,7 +6,7 @@ Ethernet layer
 */
 
 use crate::layer::{Layer, LayerExt};
-use alloc::{format, vec::Vec};
+use alloc::vec::Vec;
 use deku::prelude::*;
 
 mod ethertype;

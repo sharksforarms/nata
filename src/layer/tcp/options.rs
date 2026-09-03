@@ -1,4 +1,4 @@
-use alloc::{format, string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use core::convert::TryFrom;
 use deku::prelude::*;
 
@@ -20,7 +20,7 @@ pub struct TimestampData {
 
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(
-    type = "u8",
+    id_type = "u8",
     endian = "endian",
     ctx = "endian: deku::ctx::Endian",
     ctx_default = "deku::ctx::Endian::Big"
@@ -43,11 +43,11 @@ pub enum TcpOption {
             value.len()
             .checked_mul(8)
             .and_then(|v| v.checked_add(2))
-            .ok_or_else(|| DekuError::Parse(\"overflow when parsing SAckData length\".to_string()))?
+            .ok_or_else(|| DekuError::Parse(\"overflow when parsing SAckData length\".into()))?
         )?}")]
         length: u8,
         #[deku(
-            count = "length.checked_sub(2).and_then(|v| v.checked_div(8)).ok_or_else(|| DekuError::Parse(\"overflow when parsing SAckData vec\".to_string()))?"
+            count = "length.checked_sub(2).and_then(|v| v.checked_div(8)).ok_or_else(|| DekuError::Parse(\"overflow when parsing SAckData vec\".into()))?"
         )]
         value: Vec<SAckData>,
     },

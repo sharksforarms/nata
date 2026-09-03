@@ -1,4 +1,3 @@
-use alloc::{format, vec::Vec};
 use deku::prelude::*;
 
 // Size in bytes of a MaxAddress

@@ -347,12 +347,7 @@ impl<R: PacketRead, W: PacketWrite> Iterator for Interface<R, W> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 
@@ -360,12 +355,7 @@ impl<T: PacketRead> Iterator for InterfaceReaderRef<'_, T> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 
@@ -373,12 +363,7 @@ impl<T: PacketRead> Iterator for InterfaceReader<T> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 

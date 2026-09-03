@@ -1,15 +1,15 @@
-use alloc::{format, vec::Vec};
 use deku::prelude::*;
 
 // Inspired from https://github.com/secdev/scapy/blob/master/scapy/libs/ethertypes.py
 
 /// Ethernet type
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
+#[derive(Debug, Default, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(
-    type = "u16",
+    id_type = "u16",
     ctx = "endian: deku::ctx::Endian",
     ctx_default = "deku::ctx::Endian::Big",
+    id_endian = "endian",
     endian = "endian"
 )]
 #[non_exhaustive]
@@ -34,6 +34,7 @@ pub enum EtherType {
     DLOG2,
     /// IP protocol
     #[deku(id = "0x0800")]
+    #[default]
     IPv4,
     /// X.75 Internet
     #[deku(id = "0x0801")]
@@ -271,12 +272,6 @@ pub enum EtherType {
     Unknown(u16),
 }
 
-impl Default for EtherType {
-    fn default() -> Self {
-        EtherType::IPv4
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +285,17 @@ mod tests {
 
         let ret_write = ret_read.to_bytes().unwrap();
         assert_eq!(test_data, ret_write);
+    }
+
+    #[test]
+    fn test_unknown_ethertype_rw() {
+        let test_data = [0x90, 0x00];
+
+        let (_rest, ret_read) = EtherType::from_bytes((&test_data, 0)).unwrap();
+        assert_eq!(EtherType::Unknown(0x9000), ret_read);
+
+        let ret_write = ret_read.to_bytes().unwrap();
+        assert_eq!(test_data, ret_write.as_slice());
     }
 
     #[test]

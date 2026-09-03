@@ -29,7 +29,7 @@ impl<'a> PacketView<'a> {
 }
 
 /// A packet is simply a collection of [Layer](crate::layer::LayerExt)
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Packet {
     layers: Vec<LayerOwned>,
 }
@@ -73,12 +73,6 @@ impl Packet {
     /// Packet to bytes
     pub fn to_bytes(&self) -> Result<Vec<u8>, PacketError> {
         Ok(crate::layer::utils::layers_to_bytes(&self.layers)?)
-    }
-}
-
-impl Default for Packet {
-    fn default() -> Self {
-        Self { layers: Vec::new() }
     }
 }
 
@@ -205,7 +199,7 @@ impl PacketParser {
                 -> Option<fn(&[u8]) -> Result<(&[u8], Box<dyn LayerExt>), crate::layer::LayerError>>,
     {
         let tid = TypeId::of::<LayerType>();
-        let bindings = self.layer_bindings.entry(tid).or_insert_with(Vec::new);
+        let bindings = self.layer_bindings.entry(tid).or_default();
         (*bindings).push(Box::new(
             move |current_layer: &dyn LayerExt, rest: &[u8]| -> _ {
                 // SAFETY: This callback is only to be called if the layer type is `LayerType` therefor we

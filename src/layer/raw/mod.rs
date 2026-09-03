@@ -3,38 +3,19 @@ Raw layer
 
 A Raw layer represents un-parsed data or application data such as a UDP payload
 */
-use alloc::{format, vec::Vec};
-use deku::bitvec::{BitSlice, Msb0};
+use alloc::vec::Vec;
 use deku::prelude::*;
 
 use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
 
 /// Raw layer
-#[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
+#[derive(Debug, Default, PartialEq, Clone, DekuRead, DekuWrite)]
 #[allow(missing_docs)]
 pub struct Raw {
-    #[deku(reader = "Raw::reader(deku::rest)")]
+    #[deku(read_all)]
     pub data: Vec<u8>,
     #[deku(skip)]
     pub bit_offset: usize,
-}
-
-impl Raw {
-    fn reader(rest: &BitSlice<Msb0, u8>) -> Result<(&BitSlice<Msb0, u8>, Vec<u8>), DekuError> {
-        // read all the rest
-        let ret = rest.as_raw_slice().to_vec();
-        let (empty, _rest) = rest.split_at(0);
-        Ok((empty, ret))
-    }
-}
-
-impl Default for Raw {
-    fn default() -> Self {
-        Raw {
-            data: Vec::new(),
-            bit_offset: 0,
-        }
-    }
 }
 
 impl Layer for Raw {}

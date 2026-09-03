@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::black_box;
 use criterion::Criterion;
+use std::hint::black_box;
 
 use hatchet::layer::ether::Ether;
 use hatchet::layer::ip::{Ipv4, Ipv6};

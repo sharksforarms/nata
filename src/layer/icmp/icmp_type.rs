@@ -1,10 +1,9 @@
-use alloc::{format, vec::Vec};
 use deku::prelude::*;
 
 /// Icmp Type
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(
-    type = "u8",
+    id_type = "u8",
     ctx = "endian: deku::ctx::Endian",
     ctx_default = "deku::ctx::Endian::Big",
     endian = "endian"
