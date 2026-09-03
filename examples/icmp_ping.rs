@@ -40,7 +40,7 @@ fn main() {
         Box::new(Icmp4 {
             icmp_type: IcmpType::EchoRequest,
             data: vec![0xFF, 0xFF],
-            message: 0xDfADBEfF,
+            message: 0xDFADBEFF,
             ..Default::default()
         }),
     ]);
@@ -48,7 +48,7 @@ fn main() {
     echo_request.finalize().unwrap();
 
     tx.write(echo_request).unwrap();
-    for (_i, pkt) in (&mut rx).enumerate() {
+    for pkt in &mut rx {
         for l in pkt.layers() {
             if is_layer!(l, Icmp4) {
                 println!("Packet: {:?}", pkt);

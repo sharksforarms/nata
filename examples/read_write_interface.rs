@@ -11,7 +11,7 @@ fn main() {
     let (mut rx, mut tx) = int.into_split();
     //let (mut rx, mut tx) = int.split();
 
-    for (_i, pkt) in (&mut rx).enumerate() {
+    for pkt in &mut rx {
         println!("Packet: {:?}", pkt);
 
         // send a hello world for every packet

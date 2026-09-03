@@ -28,7 +28,7 @@ impl LayerExt for Http {
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, LayerError> {
-        todo!()
+        Ok(self.data.as_bytes().to_vec())
     }
 }
 
