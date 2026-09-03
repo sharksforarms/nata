@@ -2,8 +2,11 @@
 
 FROM node:24-bookworm-slim AS node-runtime
 
-FROM rust:1.98-slim-bookworm
+FROM rust:1.88-slim-bookworm AS nata-build
 
+ARG STABLE_TOOLCHAIN=stable
+ARG MSRV_TOOLCHAIN=1.88.0
+ARG BETA_TOOLCHAIN=beta
 ARG JUST_VERSION=1.58.0
 ARG WASM_PACK_VERSION=0.15.0
 ARG CARGO_LLVM_COV_VERSION=0.8.7
@@ -18,19 +21,25 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup component add clippy rustfmt llvm-tools-preview \
-    && rustup target add \
-        thumbv7em-none-eabihf \
-        thumbv6m-none-eabi \
-        wasm32-unknown-unknown
+RUN rustup toolchain install "${MSRV_TOOLCHAIN}" --profile minimal \
+    && rustup toolchain install "${STABLE_TOOLCHAIN}" --profile minimal \
+    && rustup toolchain install "${BETA_TOOLCHAIN}" --profile minimal \
+    && for toolchain in "${MSRV_TOOLCHAIN}" "${STABLE_TOOLCHAIN}" "${BETA_TOOLCHAIN}"; do \
+        rustup component add --toolchain "${toolchain}" clippy rustfmt; \
+        rustup target add --toolchain "${toolchain}" \
+            thumbv7em-none-eabihf \
+            thumbv6m-none-eabi \
+            wasm32-unknown-unknown; \
+    done \
+    && rustup component add --toolchain "${STABLE_TOOLCHAIN}" llvm-tools-preview
 
 RUN --mount=type=cache,id=nata-tools-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=nata-tools-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=nata-tools-target,target=/tmp/cargo-target,sharing=locked \
     export CARGO_TARGET_DIR=/tmp/cargo-target \
-    && cargo install just --version "${JUST_VERSION}" --locked \
-    && cargo install wasm-pack --version "${WASM_PACK_VERSION}" --locked \
-    && cargo install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
+    && cargo +${STABLE_TOOLCHAIN} install just --version "${JUST_VERSION}" --locked \
+    && cargo +${STABLE_TOOLCHAIN} install wasm-pack --version "${WASM_PACK_VERSION}" --locked \
+    && cargo +${STABLE_TOOLCHAIN} install cargo-llvm-cov --version "${CARGO_LLVM_COV_VERSION}" --locked
 
 RUN groupadd --gid "${USER_GID}" nata \
     && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home --shell /bin/bash nata \
@@ -41,7 +50,10 @@ RUN groupadd --gid "${USER_GID}" nata \
 
 ENV CARGO_HOME=/home/nata/.cargo \
     CARGO_TARGET_DIR=/workspace/target \
-    CARGO_TERM_COLOR=always
+    CARGO_TERM_COLOR=always \
+    NATA_STABLE_TOOLCHAIN=${STABLE_TOOLCHAIN} \
+    NATA_MSRV_TOOLCHAIN=${MSRV_TOOLCHAIN} \
+    NATA_BETA_TOOLCHAIN=${BETA_TOOLCHAIN}
 
 USER nata
 WORKDIR /workspace

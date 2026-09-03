@@ -166,6 +166,7 @@ impl LayerExt for Udp {
 mod tests {
     use super::*;
     use crate::layer::ip::{Ipv4, Ipv6};
+    use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
     use std::convert::TryFrom;

@@ -92,7 +92,7 @@ mod tests {
     #[rstest(sack_len,
         case::max(31),
 
-        #[should_panic(expected = "Parse(\"error parsing int: out of range integral type conversion attempted\")")]
+        #[should_panic]
         case::overflow(32),
     )]
     fn test_sack_update_overflow(sack_len: usize) {

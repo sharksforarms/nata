@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use nata::{
     datalink::{pcapfile::PcapFile, InterfaceReader},
     is_layer,

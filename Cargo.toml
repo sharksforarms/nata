@@ -3,6 +3,7 @@ name = "nata"
 version = "0.1.0"
 authors = ["Emmanuel Thompson <eet6646@gmail.com>"]
 edition = "2018"
+rust-version = "1.88"
 license = "MIT or Apache2-0"
 repository = "https://github.com/sharksforarms/nata"
 keywords = ["packet", "network", "serialization", "deserialization", "parse"]
@@ -15,7 +16,7 @@ features = ["pnet", "pcap", "netmap"]
 
 [features]
 netmap = ["pnet/netmap"]
-default = ["std", "pcap"]
+default = ["std"]
 std = ["pnet", "pcap-file"]
 pcap = ["pnet/pcap"]
 
