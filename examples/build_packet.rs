@@ -1,4 +1,4 @@
-use hatchet::{
+use nata::{
     is_layer,
     layer::{
         ether::{Ether, EtherType, MacAddress},
@@ -30,7 +30,7 @@ fn main() {
             ..Udp::default()
         }),
         Box::new(Raw {
-            data: b"hello from hatchet".to_vec(),
+            data: b"hello from nata".to_vec(),
             ..Raw::default()
         }),
     ];

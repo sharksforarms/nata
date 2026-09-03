@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, vec, vec::Vec};
-use hatchet::{
+use nata::{
     get_layer,
     layer::{
         ether::{Ether, EtherType, MacAddress},
@@ -15,7 +15,7 @@ use hatchet::{
     packet::{Packet, PacketParser},
 };
 
-pub const PAYLOAD: &[u8] = b"hatchet/no_std";
+pub const PAYLOAD: &[u8] = b"nata/no_std";
 
 /// The fields an embedded application might extract from a UDP frame.
 #[derive(Debug, PartialEq, Eq)]
@@ -57,7 +57,7 @@ pub fn inspect_udp_frame(frame: &[u8]) -> Option<UdpSummary> {
     })
 }
 
-/// Construct and inspect a packet using only Hatchet's `no_std` APIs.
+/// Construct and inspect a packet using only Nata's `no_std` APIs.
 pub fn build_and_inspect_udp() -> Option<UdpSummary> {
     let layers: Vec<LayerOwned> = vec![
         Box::new(Ether {

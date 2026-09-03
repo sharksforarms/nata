@@ -1,4 +1,4 @@
-use hatchet::{
+use nata::{
     datalink::{pcap::Pcap, Interface, PacketWrite},
     layer::{ether::Ether, ip::Ipv4, raw::Raw, tcp::Tcp, LayerExt, LayerOwned},
     packet::Packet,

@@ -16,13 +16,13 @@ test:
 lint:
     cargo fmt --all -- --check
     cargo fmt --manifest-path example_no_std/Cargo.toml -- --check
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --lib --bins --examples --tests -- -D warnings
 
 # Compile the no_std fixture for a bare-metal target.
 no-std-target target:
     cargo build --manifest-path example_no_std/Cargo.toml --release --target {{target}}
 
-# Verify Hatchet and the example without std.
+# Verify Nata and the example without std.
 no-std:
     cargo check --no-default-features
     cargo test --manifest-path example_no_std/Cargo.toml --lib
@@ -44,4 +44,6 @@ ci: build test lint no-std wasm
 
 # Generate the Codecov JSON report.
 coverage:
+    # Discard stale execution data while retaining instrumented build artifacts.
+    cargo llvm-cov clean --profraw-only
     cargo llvm-cov --codecov --output-path codecov.json

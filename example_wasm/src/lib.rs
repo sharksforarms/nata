@@ -3,7 +3,7 @@
 */
 use std::fmt::Write as _;
 
-use hatchet::{
+use nata::{
     layer::{ether::Ether, raw::Raw},
     packet::{Packet, PacketError, PacketParser},
 };

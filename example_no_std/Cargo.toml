@@ -22,7 +22,7 @@ name = "example_no_std"
 path = "src/main.rs"
 
 [dependencies]
-hatchet = { path = "../", default-features = false }
+nata = { path = "../", default-features = false }
 
 [target.'cfg(target_os = "none")'.dependencies]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }

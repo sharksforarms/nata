@@ -1,9 +1,9 @@
 //! Read packets from one PCAP file and write them to another.
 //!
-//! This exercises Hatchet's complete offline I/O path: each captured frame is
+//! This exercises Nata's complete offline I/O path: each captured frame is
 //! decoded into typed layers, serialized again, and stored in a new PCAP file.
 
-use hatchet::datalink::{pcapfile::PcapFile, InterfaceReader, InterfaceWriter, PacketWrite};
+use nata::datalink::{pcapfile::PcapFile, InterfaceReader, InterfaceWriter, PacketWrite};
 use std::{env, fs, process};
 
 fn usage(program: &str) -> ! {

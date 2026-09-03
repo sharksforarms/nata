@@ -1,11 +1,11 @@
-# Hatchet on `no_std`
+# Nata on `no_std`
 
 This fixture builds a real `#![no_std]`, `#![no_main]` Cortex-M application.
 It initializes an embedded heap, constructs and finalizes an Ethernet/IPv4/UDP
 packet, serializes it, parses it back, and inspects its addresses, ports, and
 payload length.
 
-Hatchet's packet representation uses allocation-backed types such as `Vec`,
+Nata's packet representation uses allocation-backed types such as `Vec`,
 `Box`, and `HashMap`. A `no_std` application therefore needs an allocator; this
 example provides a 16 KiB heap with `embedded-alloc`.
 

@@ -119,7 +119,7 @@ impl PacketParser {
     # Example
 
     ```rust
-    # use hatchet::{
+    # use nata::{
     #   is_layer, get_layer,
     #   packet::PacketParser,
     #   layer::{Layer, LayerExt, LayerOwned, LayerError}

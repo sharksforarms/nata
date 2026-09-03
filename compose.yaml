@@ -1,21 +1,18 @@
-name: hatchet
+name: nata
 
 services:
   build:
-    image: hatchet-build:1.98
+    image: nata-build:latest
     build:
       context: .
-      dockerfile: Dockerfile
+      args:
+        USER_UID: ${NATA_USER_UID:-1000}
+        USER_GID: ${NATA_USER_GID:-1000}
     init: true
-    working_dir: /workspace
-    environment:
-      CARGO_HOME: /usr/local/cargo
-      CARGO_TARGET_DIR: /workspace/target
-      CARGO_TERM_COLOR: always
     volumes:
       - .:/workspace
-      - cargo-registry:/usr/local/cargo/registry
-      - cargo-git:/usr/local/cargo/git
+      - cargo-registry:/home/nata/.cargo/registry
+      - cargo-git:/home/nata/.cargo/git
       - cargo-target:/workspace/target
 
 volumes:

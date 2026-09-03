@@ -5,6 +5,7 @@ on: [push, pull_request]
 permissions:
   contents: read
 
+# Keep only the newest CI run for each pull request or branch.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -19,14 +20,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Resolve runner user
+        id: user
+        shell: bash
+        run: printf 'uid=%s\ngid=%s\n' "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
+
       - name: Build the shared build environment
         uses: docker/build-push-action@v7
         with:
           context: .
           load: true
-          tags: hatchet-build:1.98
-          cache-from: type=gha,scope=hatchet-build-environment
-          cache-to: type=gha,mode=max,scope=hatchet-build-environment
+          tags: nata-build:latest
+          build-args: |
+            USER_UID=${{ steps.user.outputs.uid }}
+            USER_GID=${{ steps.user.outputs.gid }}
+          cache-from: type=gha,scope=nata-build-environment
+          cache-to: type=gha,mode=max,scope=nata-build-environment
 
       - name: Restore Cargo build cache
         uses: actions/cache@v5
@@ -36,12 +45,13 @@ jobs:
             .ci-cache/cargo-git
             .ci-cache/target/.rustc_info.json
             .ci-cache/target/debug
+            .ci-cache/target/llvm-cov-target
             .ci-cache/target/thumbv6m-none-eabi
             .ci-cache/target/thumbv7em-none-eabihf
             .ci-cache/target/wasm32-unknown-unknown
-          key: hatchet-cargo-v2-${{ runner.os }}-ci-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'Dockerfile', 'compose.yaml', 'compose.ci.yaml', 'Justfile') }}
+          key: nata-cargo-v2-${{ runner.os }}-ci-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'Dockerfile', 'compose.yaml', 'compose.ci.yaml', 'Justfile') }}
           restore-keys: |
-            hatchet-cargo-v2-${{ runner.os }}-ci-
+            nata-cargo-v2-${{ runner.os }}-ci-
 
       - name: Create cache directories
         run: mkdir -p .ci-cache/cargo-registry .ci-cache/cargo-git .ci-cache/target
@@ -58,11 +68,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: codecov.json
           fail_ci_if_error: true
-
-      # Cargo runs as root in the container, while actions/cache archives files
-      # as the host runner user. Normalize ownership before its post-job save.
-      - name: Prepare Cargo cache for upload
-        if: always()
-        run: |
-          sudo chown -R "$(id -u):$(id -g)" .ci-cache
-          chmod -R u+rwX .ci-cache

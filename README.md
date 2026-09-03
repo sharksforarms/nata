@@ -1,11 +1,11 @@
-# Hatchet
+# Nata
 
-[![Latest Version](https://img.shields.io/crates/v/hatchet.svg)](https://crates.io/crates/hatchet)
-[![Rust Documentation](https://docs.rs/hatchet/badge.svg)](https://docs.rs/hatchet)
-[![Actions Status](https://github.com/sharksforarms/hatchet/workflows/CI/badge.svg)](https://github.com/sharksforarms/hatchet/actions)
-[![codecov](https://codecov.io/gh/sharksforarms/hatchet/branch/master/graph/badge.svg)](https://codecov.io/gh/sharksforarms/hatchet)
+[![Latest Version](https://img.shields.io/crates/v/nata.svg)](https://crates.io/crates/nata)
+[![Rust Documentation](https://docs.rs/nata/badge.svg)](https://docs.rs/nata)
+[![Actions Status](https://github.com/sharksforarms/nata/workflows/CI/badge.svg)](https://github.com/sharksforarms/nata/actions)
+[![codecov](https://codecov.io/gh/sharksforarms/nata/branch/master/graph/badge.svg)](https://codecov.io/gh/sharksforarms/nata)
 
-Hatchet is a Rust toolkit for parsing, inspecting, constructing, and writing
+Nata is a Rust toolkit for parsing, inspecting, constructing, and writing
 network packets. It takes inspiration from [Scapy](https://scapy.net/) while
 providing strongly typed protocol layers and symmetric binary serialization.
 
@@ -26,17 +26,17 @@ providing strongly typed protocol layers and symmetric binary serialization.
 
 ```toml
 [dependencies]
-hatchet = "0.1"
+nata = "0.1"
 ```
 
 Disable the default standard-library integrations for `no_std` applications:
 
 ```toml
 [dependencies]
-hatchet = { version = "0.1", default-features = false }
+nata = { version = "0.1", default-features = false }
 ```
 
-Hatchet's packet representation uses allocation-backed types, so the
+Nata's packet representation uses allocation-backed types, so the
 application must provide an allocator. The
 [`example_no_std`](example_no_std/README.md) fixture demonstrates this in a
 real Cortex-M application and is cross-compiled for two bare-metal targets in
@@ -50,7 +50,7 @@ is serialized. The resulting bytes are then parsed back into the same four
 layers.
 
 ```rust
-use hatchet::{
+use nata::{
     is_layer,
     layer::{
         ether::{Ether, EtherType, MacAddress},
@@ -82,7 +82,7 @@ fn main() {
             ..Udp::default()
         }),
         Box::new(Raw {
-            data: b"hello from hatchet".to_vec(),
+            data: b"hello from nata".to_vec(),
             ..Raw::default()
         }),
     ];
@@ -104,8 +104,8 @@ fn main() {
 
 The same program is available as [`examples/build_packet.rs`](examples/build_packet.rs).
 
-See the [API documentation](https://docs.rs/hatchet) and
-[examples](https://github.com/sharksforarms/hatchet/tree/master/examples) for
+See the [API documentation](https://docs.rs/nata) and
+[examples](https://github.com/sharksforarms/nata/tree/master/examples) for
 custom layers, offline PCAP processing, and live packet capture and injection.
 
 ## Cargo features
@@ -123,14 +123,14 @@ only `std`:
 
 ```toml
 [dependencies]
-hatchet = { version = "0.1", default-features = false, features = ["std"] }
+nata = { version = "0.1", default-features = false, features = ["std"] }
 ```
 
 Netmap support is opt-in:
 
 ```toml
 [dependencies]
-hatchet = { version = "0.1", default-features = false, features = ["std", "netmap"] }
+nata = { version = "0.1", default-features = false, features = ["std", "netmap"] }
 ```
 
 The live backends have native prerequisites: `pcap` requires the libpcap
@@ -139,13 +139,13 @@ system and its headers. Offline PCAP file I/O does not require either backend.
 
 ## `no_std`
 
-Hatchet's packet, parser, and protocol-layer APIs support `no_std` with
+Nata's packet, parser, and protocol-layer APIs support `no_std` with
 allocation. Disable the default features to remove the standard-library,
 live-interface, and PCAP-file integrations:
 
 ```toml
 [dependencies]
-hatchet = { version = "0.1", default-features = false }
+nata = { version = "0.1", default-features = false }
 ```
 
 The core API uses allocation-backed types such as `Box` and `Vec`, so embedded
@@ -172,7 +172,7 @@ allowing application protocols to participate in the same parsing pipeline.
 
 ## I/O integrations
 
-With `std` enabled, Hatchet provides a common interface abstraction for:
+With `std` enabled, Nata provides a common interface abstraction for:
 
 - Live packet capture and injection through libpcap (`pcap` feature).
 - Live interfaces through pnet.
@@ -203,5 +203,5 @@ docker compose run --rm build just
 ## License
 
 Licensed under either the
-[MIT license](https://github.com/sharksforarms/hatchet/blob/master/LICENSE-MIT) or
-[Apache License 2.0](https://github.com/sharksforarms/hatchet/blob/master/LICENSE-APACHE).
+[MIT license](https://github.com/sharksforarms/nata/blob/master/LICENSE-MIT) or
+[Apache License 2.0](https://github.com/sharksforarms/nata/blob/master/LICENSE-APACHE).

@@ -1,4 +1,4 @@
-use hatchet::{
+use nata::{
     datalink::{pcapfile::PcapFile, InterfaceReader},
     is_layer,
     layer::{ether::Ether, raw::Raw},
@@ -41,7 +41,7 @@ gen_pcap_rw_test!(test_pcap_read_write, 14, |pkt: &Packet| {
 });
 
 gen_pcap_rw_test!(test_pcap_unhandled_read_write, 1, |pkt: &Packet| {
-    // since these are not handled in hatchet, there should only be a single Raw layer per packet
+    // since these are not handled in nata, there should only be a single Raw layer per packet
     assert_eq!(1, pkt.layers().len());
 
     let first_layer = pkt.layers().first().unwrap();

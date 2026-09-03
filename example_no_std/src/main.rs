@@ -17,7 +17,7 @@ static mut HEAP_MEMORY: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); H
 
 #[entry]
 fn main() -> ! {
-    // Hatchet's packet representation uses Vec, Box, and HashMap, so a no_std
+    // Nata's packet representation uses Vec, Box, and HashMap, so a no_std
     // application must provide an allocator before invoking it.
     unsafe {
         HEAP.init(addr_of_mut!(HEAP_MEMORY) as *mut u8 as usize, HEAP_SIZE);

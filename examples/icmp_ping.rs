@@ -1,11 +1,11 @@
-use hatchet::datalink::PacketWrite;
-use hatchet::datalink::{pcap::Pcap, Interface};
-use hatchet::is_layer;
-use hatchet::layer::ether::{Ether, EtherType, MacAddress};
-use hatchet::layer::icmp::{Icmp4, IcmpType};
-use hatchet::layer::ip::{IpProtocol, Ipv4};
-use hatchet::packet::Packet;
 use hexlit::hex;
+use nata::datalink::PacketWrite;
+use nata::datalink::{pcap::Pcap, Interface};
+use nata::is_layer;
+use nata::layer::ether::{Ether, EtherType, MacAddress};
+use nata::layer::icmp::{Icmp4, IcmpType};
+use nata::layer::ip::{IpProtocol, Ipv4};
+use nata::packet::Packet;
 use std::env;
 use std::net::Ipv4Addr;
 use std::str::FromStr;

@@ -27,7 +27,7 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 #
 wee_alloc = { version = "0.4.5", optional = true }
 
-hatchet = { path = "../", default-features = false }
+nata = { path = "../", default-features = false }
 pcap-file = "2.0"
 
 [dev-dependencies]

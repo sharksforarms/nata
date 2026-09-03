@@ -1,8 +1,8 @@
 
-# hatchet WASM
+# nata WASM
 
 This browser example loads a legacy PCAP capture from a local file or URL,
-parses every frame with Hatchet, and prints a pretty Rust `Debug` dump.
+parses every frame with Nata, and prints a pretty Rust `Debug` dump.
 
 ## Building/Running
 

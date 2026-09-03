@@ -15,7 +15,7 @@
 //! sudo iptables -D OUTPUT -p tcp --sport 8080 --tcp-flags RST RST -j DROP
 //! ```
 
-use hatchet::{
+use nata::{
     datalink::{pcap::Pcap, Interface, PacketWrite},
     get_layer,
     layer::{
@@ -33,10 +33,10 @@ const DEFAULT_PORT: u16 = 8080;
 const SERVER_INITIAL_SEQUENCE: u32 = 0x4841_5443;
 const HTTP_RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\n\
 Content-Type: text/plain\r\n\
-Content-Length: 20\r\n\
+Content-Length: 17\r\n\
 Connection: close\r\n\
 \r\n\
-Hello from Hatchet!\n";
+Hello from Nata!\n";
 
 struct Reply<'a> {
     sequence: u32,
@@ -220,7 +220,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hatchet::packet::PacketParser;
+    use nata::packet::PacketParser;
 
     #[test]
     fn builds_parseable_http_response() {
