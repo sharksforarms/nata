@@ -1,9 +1,13 @@
-# Nata
+<p align="center">
+  <img src=".github/assets/nata-mascot.png" alt="Nata mascot" width="320">
+</p>
 
-[![Latest Version](https://img.shields.io/crates/v/nata.svg)](https://crates.io/crates/nata)
-[![Rust Documentation](https://docs.rs/nata/badge.svg)](https://docs.rs/nata)
-[![Actions Status](https://github.com/sharksforarms/nata/workflows/CI/badge.svg)](https://github.com/sharksforarms/nata/actions)
-[![codecov](https://codecov.io/gh/sharksforarms/nata/branch/master/graph/badge.svg)](https://codecov.io/gh/sharksforarms/nata)
+<p align="center">
+  <a href="https://crates.io/crates/nata"><img src="https://img.shields.io/crates/v/nata.svg" alt="Latest Version"></a>
+  <a href="https://docs.rs/nata"><img src="https://docs.rs/nata/badge.svg" alt="Rust Documentation"></a>
+  <a href="https://github.com/sharksforarms/nata/actions/workflows/main.yml"><img src="https://github.com/sharksforarms/nata/actions/workflows/main.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://codecov.io/gh/sharksforarms/nata"><img src="https://codecov.io/gh/sharksforarms/nata/branch/master/graph/badge.svg" alt="codecov"></a>
+</p>
 
 Nata is a Rust toolkit for parsing, inspecting, constructing, and writing
 network packets. It takes inspiration from [Scapy](https://scapy.net/) while
@@ -18,8 +22,7 @@ providing strongly typed protocol layers and symmetric binary serialization.
 - Parse complete protocol stacks with built-in layer bindings, or register
   custom bindings for application protocols.
 - Add custom protocols by implementing the `Layer` and `LayerExt` traits.
-- Read and write live interfaces through libpcap or pnet, and read or write
-  PCAP files.
+- Read and write live packets and offline PCAP files.
 - Compile the core packet and layer APIs without `std`.
 
 ## Usage
@@ -100,45 +103,41 @@ custom layers, offline PCAP processing, and live packet capture and injection.
 
 ## Cargo features
 
-The default feature set selects `std`. Live libpcap capture is opt-in through
-the `libpcap` feature.
+Nata enables `std` by default. This provides libpnet interfaces and offline PCAP
+file I/O. Live libpcap support is opt-in.
 
 | Feature | Default | Description |
 | --- | --- | --- |
-| `std` | Yes | Standard-library data-link APIs, including pnet live interfaces and offline PCAP file I/O |
-| `libpcap` | No | Live packet capture and injection through libpcap; used together with `std` |
-| `netmap` | No | Enables pnet's netmap backend; used together with `std` |
+| `std` | Yes | Live interfaces through libpnet and offline PCAP file I/O |
+| `libpcap` | No | Live capture and injection through libpcap |
+| `netmap` | No | High-throughput live packet I/O through netmap |
 
-To use offline PCAP files and pnet interfaces without linking libpcap, enable
-only `std`:
+Enable live libpcap support with:
 
 ```toml
 [dependencies]
-nata = { version = "0.1", default-features = false, features = ["std"] }
+nata = { version = "0.1", default-features = false, features = ["std", "libpcap"] }
 ```
 
-Netmap support is opt-in:
+Enable netmap support with:
 
 ```toml
 [dependencies]
 nata = { version = "0.1", default-features = false, features = ["std", "netmap"] }
 ```
 
-To use Nata without `std`:
+For `no_std` applications, disable the default features:
 
 ```toml
 [dependencies]
 nata = { version = "0.1", default-features = false }
 ```
 
-Nata's packet representation uses allocation-backed types, so the application
-must provide an allocator. The [`example_no_std`](example_no_std/README.md)
-fixture demonstrates this in a real Cortex-M application and is
-cross-compiled for two bare-metal targets in CI.
+Packet types use allocation, so `no_std` applications must provide an
+allocator. See the `example_no_std` fixture.
 
-The live backends have native prerequisites: `libpcap` requires the libpcap
-library and development headers, while `netmap` requires a netmap-enabled
-system and its headers. Offline PCAP file I/O does not require either backend.
+`libpcap` requires its development files. `netmap` requires a netmap-enabled
+system and headers.
 
 ## Built-in layers
 
@@ -157,17 +156,11 @@ allowing application protocols to participate in the same parsing pipeline.
 
 ## I/O integrations
 
-With `std` enabled, Nata provides a common interface abstraction for:
-
-- Live packet capture and injection through libpcap (`libpcap` feature).
-- Live interfaces through pnet.
-- Offline PCAP file reading and writing.
-
-The parsing and construction APIs do not require an interface and can be used
-directly with byte slices and byte vectors.
+Packet parsing and construction work directly with byte slices and do not
+require a network interface.
 
 See [`examples/read_write_pcap.rs`](examples/read_write_pcap.rs) for portable,
-offline packet reading and writing. For a live-network example, see
+offline packet I/O. For live packet I/O, see
 [`examples/spoof_http_server.rs`](examples/spoof_http_server.rs), a minimal HTTP
 server built with packet capture and Ethernet/IPv4/TCP/Raw packet injection.
 
