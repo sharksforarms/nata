@@ -9,38 +9,31 @@
   <a href="https://codecov.io/gh/sharksforarms/nata"><img src="https://codecov.io/gh/sharksforarms/nata/branch/master/graph/badge.svg" alt="codecov"></a>
 </p>
 
-Nata is a Rust toolkit for parsing, inspecting, constructing, and writing
-network packets. It takes inspiration from [Scapy](https://scapy.net/) while
-providing strongly typed protocol layers and symmetric binary serialization.
+Nata is a Rust library for parsing, inspecting, constructing, and writing
+network packets. It takes inspiration from [Scapy](https://scapy.net/) and
+provides strongly typed protocol layers with symmetric binary serialization.
 
 ## Capabilities
 
-- Parse raw bytes into typed protocol layers and serialize them back to bytes.
-- Compose packets from independently configurable layers.
-- Finalize dependent fields such as IPv4 lengths, transport lengths, header
-  checksums, and TCP/UDP checksums.
-- Parse complete protocol stacks with built-in layer bindings, or register
-  custom bindings for application protocols.
-- Add custom protocols by implementing the `Layer` and `LayerExt` traits.
-- Read and write live packets and offline PCAP files.
-- Compile the core packet and layer APIs without `std`.
+- Parse and serialize typed protocol layers.
+- Build packets and finalize dependent lengths and checksums.
+- Register custom layer bindings and define new protocols.
+- Capture live packets, read PCAP/PCAPNG and gzip-compressed captures, and
+  write PCAP files.
+- Use the core packet APIs in `no_std` applications.
 
-## Usage
+## Install
 
 ```toml
 [dependencies]
 nata = "0.1"
 ```
 
-See [Cargo features](#cargo-features) for optional integrations and `no_std`
-configuration.
+See [Features](#features) for optional integrations and `no_std` configuration.
 
 ## Quick start
 
-The example below creates an Ethernet/IPv4/UDP packet containing a raw payload.
-`finalize` fills in the dependent length and checksum fields before the packet
-is serialized. The resulting bytes are then parsed back into the same four
-layers.
+Build and parse an Ethernet/IPv4/UDP packet:
 
 ```rust
 use nata::{
@@ -95,20 +88,21 @@ fn main() {
 }
 ```
 
-The same program is available as [`examples/build_packet.rs`](examples/build_packet.rs).
+See the complete runnable version in
+[`examples/build_packet.rs`](examples/build_packet.rs). For custom layers,
+capture-file processing, and live packet capture and injection, see the [API
+documentation](https://docs.rs/nata) and
+[examples](https://github.com/sharksforarms/nata/tree/master/examples).
 
-See the [API documentation](https://docs.rs/nata) and
-[examples](https://github.com/sharksforarms/nata/tree/master/examples) for
-custom layers, offline PCAP processing, and live packet capture and injection.
+## Features
 
-## Cargo features
-
-Nata enables `std` by default. This provides libpnet interfaces and offline PCAP
-file I/O. Live libpcap support is opt-in.
+`std` is enabled by default. It provides live interfaces through libpnet and
+offline capture-file reading for PCAP/PCAPNG files, including gzip-compressed
+input. Live libpcap support is optional.
 
 | Feature | Default | Description |
 | --- | --- | --- |
-| `std` | Yes | Live interfaces through libpnet and offline PCAP file I/O |
+| `std` | Yes | Live interfaces, PCAP/PCAPNG reading, and PCAP writing |
 | `libpcap` | No | Live capture and injection through libpcap |
 
 Enable live libpcap support with:
@@ -128,39 +122,36 @@ nata = { version = "0.1", default-features = false }
 Packet types use allocation, so `no_std` applications must provide an
 allocator. See the `example_no_std` fixture.
 
-`libpcap` requires its development files.
+The `libpcap` feature requires libpcap development files.
 
 ## Built-in layers
 
-- Ethernet II (`Ether`, `EtherType`, `MacAddress`)
-- IPv4 (`Ipv4`, `IpProtocol`, `Ipv4Option`)
-- IPv6 (`Ipv6`, `IpProtocol`)
-- ICMPv4 (`Icmp4`, `IcmpType`)
-- TCP (`Tcp`, `TcpFlags`, `TcpOption`)
-- UDP (`Udp`)
-- Raw payload data (`Raw`)
+- Ethernet II: `Ether`, `EtherType`, `MacAddress`
+- IP: `Ipv4`, `Ipv6`, `IpProtocol`, `Ipv4Option`
+- ICMPv4: `Icmp4`, `IcmpType`
+- TCP: `Tcp`, `TcpFlags`, `TcpOption`
+- UDP: `Udp`
+- Raw payload: `Raw`
 
-`PacketParser::new()` includes bindings for Ethernet to IPv4/IPv6, IP to
-ICMPv4/TCP/UDP, and TCP/UDP to raw payload data. Unknown protocols fall back to
-`Raw`. Additional bindings can be registered with `PacketParser::bind_layer`,
-allowing application protocols to participate in the same parsing pipeline.
+`PacketParser::new()` binds Ethernet to IPv4/IPv6, IP to ICMPv4/TCP/UDP, and
+TCP/UDP to `Raw`. Unknown protocols fall back to `Raw`. Use
+`PacketParser::bind_layer` to add application protocols.
 
-## I/O integrations
+## Examples
 
-Packet parsing and construction work directly with byte slices and do not
-require a network interface.
+- [Build and parse a packet](examples/build_packet.rs)
+- [Define a custom layer](examples/custom_layer.rs)
+- [Read and write a PCAP file](examples/read_write_pcap.rs)
+- [Capture and inject packets](examples/spoof_http_server.rs)
 
-See [`examples/read_write_pcap.rs`](examples/read_write_pcap.rs) for portable,
-offline packet I/O. For live packet I/O, see
-[`examples/spoof_http_server.rs`](examples/spoof_http_server.rs), a minimal HTTP
-server built with packet capture and Ethernet/IPv4/TCP/Raw packet injection.
+See the [API documentation](https://docs.rs/nata) for the complete API.
 
 ## Development
 
-Run the same checks as CI inside the cached Docker environment:
+Run the stable CI pipeline inside the cached Docker environment:
 
 ```sh
-docker compose run --rm build just ci
+docker compose run --rm build just ci-stable
 ```
 
 List the available build, test, lint, and coverage commands with:
@@ -168,6 +159,15 @@ List the available build, test, lint, and coverage commands with:
 ```sh
 docker compose run --rm build just
 ```
+
+Run only the TShark compatibility suite with:
+
+```sh
+docker compose run --rm build just tshark-test
+```
+
+The container includes the pinned TShark version and fetches the pinned
+Wireshark capture corpus when needed.
 
 ## License
 
