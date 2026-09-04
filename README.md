@@ -110,20 +110,12 @@ file I/O. Live libpcap support is opt-in.
 | --- | --- | --- |
 | `std` | Yes | Live interfaces through libpnet and offline PCAP file I/O |
 | `libpcap` | No | Live capture and injection through libpcap |
-| `netmap` | No | High-throughput live packet I/O through netmap |
 
 Enable live libpcap support with:
 
 ```toml
 [dependencies]
 nata = { version = "0.1", default-features = false, features = ["std", "libpcap"] }
-```
-
-Enable netmap support with:
-
-```toml
-[dependencies]
-nata = { version = "0.1", default-features = false, features = ["std", "netmap"] }
 ```
 
 For `no_std` applications, disable the default features:
@@ -136,8 +128,7 @@ nata = { version = "0.1", default-features = false }
 Packet types use allocation, so `no_std` applications must provide an
 allocator. See the `example_no_std` fixture.
 
-`libpcap` requires its development files. `netmap` requires a netmap-enabled
-system and headers.
+`libpcap` requires its development files.
 
 ## Built-in layers
 

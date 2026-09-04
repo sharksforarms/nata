@@ -8,7 +8,7 @@ pipeline := env_var_or_default("NATA_TOOLCHAIN", "stable")
 toolchain := if pipeline == "msrv" { msrv } else if pipeline == "stable" { stable } else if pipeline == "beta" { beta } else { pipeline }
 
 # Feature combinations exercised by the test and coverage matrix.
-feature_matrix := "std libpcap netmap std,libpcap"
+feature_matrix := "std libpcap std,libpcap"
 
 default:
     @just --list

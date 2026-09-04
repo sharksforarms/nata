@@ -12,10 +12,9 @@ description = "Network packet manipulation toolkit"
 readme = "README.md"
 
 [package.metadata.docs.rs]
-features = ["pnet", "libpcap", "netmap"]
+features = ["pnet", "libpcap"]
 
 [features]
-netmap = ["pnet/netmap"]
 default = ["std"]
 std = ["pnet", "pcap-file"]
 libpcap = ["pnet/pcap"]
