@@ -11,12 +11,15 @@ categories = ["network-programming", "simulation", "parsing", "no-std"]
 description = "Network packet manipulation toolkit"
 readme = "README.md"
 
+[workspace]
+members = ["nata-tshark"]
+
 [package.metadata.docs.rs]
 features = ["pnet", "libpcap"]
 
 [features]
 default = ["std"]
-std = ["pnet", "pcap-file"]
+std = ["pnet", "pcap-file", "flate2"]
 libpcap = ["pnet/pcap"]
 
 [dependencies]
@@ -24,6 +27,7 @@ hashbrown = "0.17"
 deku = { version = "0.20", default-features = false, features = ["alloc", "bits", "descriptive-errors"] }
 pnet = { version = "0.35", optional = true }
 pcap-file = { version = "2.0", optional = true }
+flate2 = { version = "1", optional = true }
 
 [dev-dependencies]
 rstest = "0.26"

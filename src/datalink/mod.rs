@@ -9,9 +9,11 @@ Some interface types are enabled via crate features.
 |-----------|------------------|------------
 | [Pnet] | default | Use [libpnet] cross-platform abstraction over a network interface
 | [Pcap] | libpcap | Use libpcap for I/O on a network interface
+| [PcapFile] | std | Read PCAP and PCAPNG capture files and write PCAP files
 
 [Pnet]: crate::datalink::pnet::Pnet
 [Pcap]: crate::datalink::pcap::Pcap
+[PcapFile]: crate::datalink::pcapfile::PcapFile
 [libpnet]: https://github.com/libpnet/libpnet
 
 # Example

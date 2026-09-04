@@ -16,9 +16,11 @@ ARG USER_GID=1000
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        git \
         libpcap-dev \
         pkg-config \
+        tshark \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup toolchain install "${MSRV_TOOLCHAIN}" --profile minimal \
