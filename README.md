@@ -101,13 +101,13 @@ custom layers, offline PCAP processing, and live packet capture and injection.
 
 ## Cargo features
 
-Nata enables `std` by default. This provides libpnet interfaces and offline PCAP
-file I/O. Live libpcap support is opt-in.
+Nata enables `std` by default. This provides live interfaces through the default
+libpnet backend and offline PCAP file I/O. Live libpcap support is opt-in.
 
 | Feature | Default | Description |
 | --- | --- | --- |
-| `std` | Yes | Live interfaces through libpnet and offline PCAP file I/O |
-| `libpcap` | No | Live capture and injection through libpcap |
+| `std` | Yes | Live interfaces through the default libpnet backend and offline PCAP file I/O |
+| `libpcap` | No | Select libpcap as the live capture and injection backend |
 
 Enable live libpcap support with:
 
@@ -161,10 +161,29 @@ require a network interface.
 
 See [`examples/read_write_pcap.rs`](examples/read_write_pcap.rs) for portable,
 offline packet I/O. `PcapFile::open` and `PcapFile::create` provide convenient
-entry points, while `try_iter` preserves read and parse errors. For live packet
-I/O, see
-[`examples/spoof_http_server.rs`](examples/spoof_http_server.rs), a minimal HTTP
-server built with packet capture and Ethernet/IPv4/TCP/Raw packet injection.
+entry points, while `try_iter` preserves read and parse errors.
+
+For live packet I/O, use the backend-neutral `datalink::Interface` API. It
+selects libpcap when the `libpcap` feature is enabled and otherwise uses
+libpnet; application code does not need to name either backend:
+
+```rust,no_run
+use nata::{datalink::Interface, prelude::*};
+
+let mut interface = Interface::open("eth0")?;
+let (mut reader, mut writer) = interface.split();
+
+for packet in reader.try_iter() {
+    writer.send(packet?)?;
+}
+# Ok::<(), nata::datalink::error::DataLinkError>(())
+```
+
+`PcapFile` is for offline capture files. Advanced integrations can implement
+`PacketInterface` and use `BackendInterface` directly. See
+[`examples/spoof_http_server.rs`](examples/spoof_http_server.rs) for a minimal
+live HTTP server built with packet capture and Ethernet/IPv4/TCP/Raw packet
+injection.
 
 ## Development
 

@@ -1,8 +1,8 @@
-use nata::{datalink::pcap::Pcap, prelude::*};
+use nata::{datalink::Interface, prelude::*};
 
 fn main() {
     // Read from interface
-    let mut interface = Pcap::open("lo").unwrap();
+    let mut interface = Interface::open("lo").unwrap();
 
     let (mut rx, mut tx) = interface.split();
 

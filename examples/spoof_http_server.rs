@@ -15,7 +15,7 @@
 //! sudo iptables -D OUTPUT -p tcp --sport 8080 --tcp-flags RST RST -j DROP
 //! ```
 
-use nata::{datalink::pcap::Pcap, prelude::*};
+use nata::{datalink::Interface, prelude::*};
 use std::{convert::TryFrom, env, net::Ipv4Addr, process};
 
 const DEFAULT_PORT: u16 = 8080;
@@ -122,7 +122,7 @@ fn main() {
     }
 
     let server_ip = u32::from(server_ip);
-    let mut interface = Pcap::open(&interface_name)
+    let mut interface = Interface::open(&interface_name)
         .unwrap_or_else(|error| panic!("failed to open {}: {:?}", interface_name, error));
     let server_mac = interface
         .mac_address()

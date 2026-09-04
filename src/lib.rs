@@ -129,12 +129,12 @@ See [here](crate::datalink) for more information.
 ## Example
 
 ```rust,no_run
-#[cfg(feature = "libpcap")]
+#[cfg(feature = "std")]
 fn main() {
-use nata::{datalink::pcap::Pcap, prelude::*};
+use nata::{datalink::Interface, prelude::*};
 
-// Read from interface using libpcap
-let mut int = Pcap::open("lo").unwrap();
+// Read from a live interface using the configured backend
+let mut int = Interface::open("lo").unwrap();
 
 let (mut rx, mut _tx) = int.into_split();
 
@@ -143,7 +143,7 @@ for pkt in rx.try_iter() {
 }
 }
 
-#[cfg(not(feature = "libpcap"))]
+#[cfg(not(feature = "std"))]
 fn main() {}
 ```
 
@@ -187,7 +187,7 @@ pub mod prelude {
     pub use crate::{parse, parse_partial};
 
     #[cfg(feature = "std")]
-    pub use crate::datalink::{PacketRead, PacketReadExt, PacketWrite};
+    pub use crate::datalink::{Interface, PacketRead, PacketReadExt, PacketWrite};
 }
 
 #[cfg(feature = "std")]

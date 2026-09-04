@@ -3,34 +3,16 @@ Packet interface implementation using `libpnet`
 */
 use pnet::datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface};
 
-use super::{DataLinkError, PacketInterface, PacketRead, PacketWrite};
+use super::{BackendInterface, DataLinkError, PacketInterface, PacketRead, PacketWrite};
 use crate::{
-    datalink::{Interface, InterfaceMetadata},
+    datalink::InterfaceMetadata,
     layer::ether::{Ether, MacAddress},
     packet::{Packet, PacketParser},
 };
 use alloc::boxed::Box;
 
 /// Pnet network interface
-pub struct Pnet {
-    reader: PnetReader,
-    writer: PnetWriter,
-}
-
-impl Pnet {
-    /// Open a live capture and injection interface.
-    pub fn open(interface_name: &str) -> Result<Interface<PnetReader, PnetWriter>, DataLinkError> {
-        <Self as PacketInterface>::init(interface_name)
-    }
-
-    /// Open a live interface with a custom packet parser.
-    pub fn open_with_parser(
-        interface_name: &str,
-        packet_parser: PacketParser,
-    ) -> Result<Interface<PnetReader, PnetWriter>, DataLinkError> {
-        <Self as PacketInterface>::init_with_parser(interface_name, packet_parser)
-    }
-}
+pub struct Pnet;
 
 /// Pnet reader
 pub struct PnetReader {
@@ -47,14 +29,16 @@ impl PacketInterface for Pnet {
     type Reader = PnetReader;
     type Writer = PnetWriter;
 
-    fn init(interface_name: &str) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError> {
+    fn init(
+        interface_name: &str,
+    ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError> {
         Self::init_with_parser(interface_name, PacketParser::new())
     }
 
     fn init_with_parser(
         interface_name: &str,
         packet_parser: PacketParser,
-    ) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError> {
+    ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError> {
         let interface_names_match = |iface: &NetworkInterface| iface.name == interface_name;
 
         // Find the network interface with the provided name
@@ -70,7 +54,7 @@ impl PacketInterface for Pnet {
             Err(e) => Err(DataLinkError::IoError(e)),
         }?;
 
-        Ok(Interface {
+        Ok(BackendInterface {
             reader: PnetReader {
                 packet_parser,
                 reader: rx,
@@ -80,12 +64,6 @@ impl PacketInterface for Pnet {
                 mac_address: interface.mac.map(|v| MacAddress(v.octets())),
             },
         })
-    }
-}
-
-impl PacketRead for Pnet {
-    fn read(&mut self) -> Result<Packet, DataLinkError> {
-        self.reader.read()
     }
 }
 
@@ -99,12 +77,6 @@ impl PacketRead for PnetReader {
             }
             Err(e) => Err(DataLinkError::IoError(e)),
         }
-    }
-}
-
-impl PacketWrite for Pnet {
-    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
-        self.writer.write(packet)
     }
 }
 

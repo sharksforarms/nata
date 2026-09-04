@@ -1,5 +1,5 @@
 use hexlit::hex;
-use nata::{datalink::pcap::Pcap, prelude::*};
+use nata::{datalink::Interface, prelude::*};
 use std::env;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
@@ -9,8 +9,8 @@ fn main() {
     let interface = args.get(1).expect("expected a network interface");
     let ip_addr = args.get(2).expect("expected an ipv4 address as argument");
 
-    // Initiate a read/write channel on the network interface using libpcap
-    let mut int = Pcap::open(interface).unwrap();
+    // Initiate a read/write channel on the network interface using the configured backend
+    let mut int = Interface::open(interface).unwrap();
     let mac_addr = int.mac_address().cloned().unwrap();
     println!("mac_addr: {:x?}", mac_addr);
     let (mut rx, mut tx) = int.split();
