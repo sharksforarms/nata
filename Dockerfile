@@ -7,6 +7,7 @@ FROM rust:1.88-slim-bookworm AS nata-build
 ARG STABLE_TOOLCHAIN=stable
 ARG MSRV_TOOLCHAIN=1.88.0
 ARG BETA_TOOLCHAIN=beta
+ARG NETMAP_COMMIT=6d3a00936a7dfae50d97b9f90d5f05bff235c86c
 ARG JUST_VERSION=1.58.0
 ARG WASM_PACK_VERSION=0.15.0
 ARG CARGO_LLVM_COV_VERSION=0.8.7
@@ -17,9 +18,16 @@ COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
+        curl \
         libpcap-dev \
         pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d /usr/include/net \
+    && for header in netmap.h netmap_legacy.h netmap_user.h; do \
+        curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/luigirizzo/netmap/${NETMAP_COMMIT}/sys/net/${header}" \
+            --output "/usr/include/net/${header}"; \
+    done
 
 RUN rustup toolchain install "${MSRV_TOOLCHAIN}" --profile minimal \
     && rustup toolchain install "${STABLE_TOOLCHAIN}" --profile minimal \
