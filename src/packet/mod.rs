@@ -2,33 +2,93 @@
 Packet parsing and construction.
 */
 
-use crate::{
-    get_layer,
-    layer::{LayerExt, LayerOwned, LayerRef},
-};
-use alloc::{boxed::Box, vec, vec::Vec};
-use core::any::TypeId;
+use crate::layer::{IntoLayer, LayerOwned, PacketLayer};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+use core::{any::TypeId, fmt, ops::Div};
 use hashbrown::HashMap;
 
-pub mod bindings;
+mod bindings;
 
 pub mod error;
 pub use error::PacketError;
 
-/// Read-only view of a packet
-pub struct PacketView<'a> {
-    #[allow(dead_code)]
-    layers: Vec<LayerRef<'a>>,
+/// A read-only view of an existing packet.
+///
+/// `PacketRef` borrows the packet's layers and provides the same typed lookup
+/// helpers as [`Packet`], without cloning or exposing the layer storage.
+#[derive(Clone, Copy)]
+pub struct PacketRef<'a> {
+    layers: &'a [LayerOwned],
 }
 
-impl<'a> PacketView<'a> {
-    /// Create a PacketView from layers
-    pub fn from_layers(layers: Vec<LayerRef<'a>>) -> Self {
-        Self { layers }
+impl<'a> PacketRef<'a> {
+    /// Create a view borrowed from a packet.
+    pub fn from_packet(packet: &'a Packet) -> Self {
+        Self {
+            layers: &packet.layers,
+        }
+    }
+
+    /// Return the number of layers in the packet.
+    pub fn len(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// Return whether the packet contains no layers.
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty()
+    }
+
+    /// Iterate over the packet's layers.
+    pub fn iter(&self) -> impl Iterator<Item = &'a dyn PacketLayer> {
+        self.layers.iter().map(|layer| layer.as_ref())
+    }
+
+    /// Return the first layer of type `T`.
+    pub fn get<T: PacketLayer + 'static>(&self) -> Option<&'a T> {
+        self.layers
+            .iter()
+            .find_map(|layer| layer.as_any().downcast_ref::<T>())
+    }
+
+    /// Return all layers of type `T`.
+    pub fn get_all<T: PacketLayer + 'static>(&self) -> impl Iterator<Item = &'a T> {
+        self.layers
+            .iter()
+            .filter_map(|layer| layer.as_any().downcast_ref::<T>())
+    }
+
+    /// Return whether the packet contains a layer of type `T`.
+    pub fn has<T: PacketLayer + 'static>(&self) -> bool {
+        self.get::<T>().is_some()
+    }
+
+    /// Return a compact, slash-separated layer summary.
+    pub fn summary(&self) -> String {
+        let mut summary = String::new();
+        for (index, layer) in self.iter().enumerate() {
+            if index != 0 {
+                summary.push_str(" / ");
+            }
+            summary.push_str(layer.name());
+        }
+        summary
     }
 }
 
-/// A packet is simply a collection of [Layer](crate::layer::LayerExt)
+impl<'a> From<&'a Packet> for PacketRef<'a> {
+    fn from(packet: &'a Packet) -> Self {
+        Self::from_packet(packet)
+    }
+}
+
+impl fmt::Display for PacketRef<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.summary())
+    }
+}
+
+/// A packet is an ordered collection of [`PacketLayer`]s.
 #[derive(Debug, Default, Clone)]
 pub struct Packet {
     layers: Vec<LayerOwned>,
@@ -40,15 +100,29 @@ impl Packet {
         Self::default()
     }
 
-    /// Construct a Packet given existing layers
-    pub fn from_layers(layers: Vec<LayerOwned>) -> Self {
+    /// Start building a packet without exposing its erased layer storage.
+    pub fn builder() -> PacketBuilder {
+        PacketBuilder::default()
+    }
+
+    /// Construct a packet containing one layer.
+    pub fn from_layer<L: IntoLayer>(layer: L) -> Self {
+        Self {
+            layers: vec![layer.into_layer()],
+        }
+    }
+
+    fn from_boxed_layers(layers: Vec<LayerOwned>) -> Self {
         Self { layers }
     }
 
-    /// Finalize a packet
-    ///
-    /// This will call finalize on each layer of the packet
-    pub fn finalize(&mut self) -> Result<(), PacketError> {
+    /// Append a layer to the packet.
+    pub fn push<L: IntoLayer>(&mut self, layer: L) -> &mut Self {
+        self.layers.push(layer.into_layer());
+        self
+    }
+
+    fn finalize(&mut self) -> Result<(), PacketError> {
         for i in 0..self.layers.len() {
             let (prev, rest) = self.layers.split_at_mut(i);
             let (current, next) = rest.split_at_mut(1);
@@ -60,34 +134,130 @@ impl Packet {
         Ok(())
     }
 
-    /// Immutable access of the layers
-    pub fn layers(&self) -> &[LayerOwned] {
-        &self.layers
+    /// Borrow this packet through a [`PacketRef`].
+    pub fn as_ref(&self) -> PacketRef<'_> {
+        PacketRef::from_packet(self)
     }
 
-    /// Mutable access of the layers
-    pub fn layers_mut(&mut self) -> &mut [LayerOwned] {
-        &mut self.layers
+    /// Iterate over the packet's layers without exposing the backing boxes.
+    pub fn iter(&self) -> impl Iterator<Item = &dyn PacketLayer> {
+        self.layers.iter().map(|layer| layer.as_ref())
     }
 
-    /// Packet to bytes
-    pub fn to_bytes(&self) -> Result<Vec<u8>, PacketError> {
+    /// Return the first layer of type `T`.
+    pub fn get<T: PacketLayer + 'static>(&self) -> Option<&T> {
+        self.layers
+            .iter()
+            .find_map(|layer| layer.as_any().downcast_ref::<T>())
+    }
+
+    /// Return a mutable reference to the first layer of type `T`.
+    pub fn get_mut<T: PacketLayer + 'static>(&mut self) -> Option<&mut T> {
+        self.layers
+            .iter_mut()
+            .find_map(|layer| layer.as_any_mut().downcast_mut::<T>())
+    }
+
+    /// Return all layers of type `T`.
+    pub fn get_all<T: PacketLayer + 'static>(&self) -> impl Iterator<Item = &T> {
+        self.layers
+            .iter()
+            .filter_map(|layer| layer.as_any().downcast_ref::<T>())
+    }
+
+    /// Return whether the packet contains a layer of type `T`.
+    pub fn has<T: PacketLayer + 'static>(&self) -> bool {
+        self.get::<T>().is_some()
+    }
+
+    /// Return a compact, slash-separated layer summary.
+    pub fn summary(&self) -> String {
+        self.as_ref().summary()
+    }
+
+    /// Finalize the packet and serialize it to bytes.
+    pub fn bytes(&mut self) -> Result<Vec<u8>, PacketError> {
+        self.finalize()?;
+        self.serialize()
+    }
+
+    /// Finalize the packet and serialize it, consuming the packet.
+    pub fn into_bytes(mut self) -> Result<Vec<u8>, PacketError> {
+        self.bytes()
+    }
+
+    fn serialize(&self) -> Result<Vec<u8>, PacketError> {
         Ok(crate::layer::utils::layers_to_bytes(&self.layers)?)
+    }
+}
+
+impl fmt::Display for Packet {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.summary())
+    }
+}
+
+/// A fluent packet builder.
+#[derive(Debug, Default)]
+pub struct PacketBuilder {
+    packet: Packet,
+}
+
+impl PacketBuilder {
+    /// Append a layer to the packet being built.
+    pub fn layer<L: IntoLayer>(mut self, layer: L) -> Self {
+        self.packet.push(layer);
+        self
+    }
+
+    /// Append a raw payload layer.
+    pub fn payload<P: AsRef<[u8]>>(mut self, payload: P) -> Self {
+        self.packet
+            .push(crate::layer::raw::Raw::new(payload.as_ref()));
+        self
+    }
+
+    /// Finalize and return the completed packet.
+    pub fn build(mut self) -> Result<Packet, PacketError> {
+        self.packet.finalize()?;
+        Ok(self.packet)
+    }
+}
+
+/// Convert one layer into a packet so additional layers can be composed with
+/// the `/` operator.
+pub trait IntoPacket {
+    /// Convert this layer into a packet.
+    fn into_packet(self) -> Packet;
+}
+
+impl<L: IntoLayer> IntoPacket for L {
+    fn into_packet(self) -> Packet {
+        Packet::from_layer(self)
+    }
+}
+
+impl<L: IntoLayer> Div<L> for Packet {
+    type Output = Packet;
+
+    fn div(mut self, layer: L) -> Self::Output {
+        self.push(layer);
+        self
     }
 }
 
 type LayerBinding = Box<
     dyn Fn(
-        &dyn LayerExt,
+        &dyn PacketLayer,
         &[u8],
     )
-        -> Option<fn(&[u8]) -> Result<(&[u8], Box<dyn LayerExt>), crate::layer::LayerError>>,
+        -> Option<fn(&[u8]) -> Result<(&[u8], Box<dyn PacketLayer>), crate::layer::LayerError>>,
 >;
 
 /**
-Parse a [Packet](self::Packet) given layer binding rules
+Parse a [Packet] given layer binding rules
 
-A layer binding specifies which [Layer](crate::layer::Layer) to read next,
+A layer binding specifies which [PacketLayer] to read next,
 given the current parsed layer and remaining data.
 
 Bindings are executed in reverse order. This allows clients to push new bindings to extend
@@ -96,6 +266,9 @@ existing behaviour.
 pub struct PacketParser {
     layer_bindings: HashMap<TypeId, Vec<LayerBinding>>,
 }
+
+/// Short name for [`PacketParser`].
+pub type Parser = PacketParser;
 
 impl PacketParser {
     /// Create a packet parser with default bindings.
@@ -110,109 +283,74 @@ impl PacketParser {
         }
     }
 
-    /**
-    Add a layer binding to the packet parser
-
-    This allows the definition of custom logic to help the parser determine the
-    next layer.
-
-    # Example
-
-    ```rust
-    # use nata::{
-    #   is_layer, get_layer,
-    #   packet::PacketParser,
-    #   layer::{Layer, LayerExt, LayerOwned, LayerError}
-    # };
-    # #[derive(Debug, PartialEq, Clone)]
-    # enum EtherType {
-    #    Ipv4 = 0x0800
-    # }
-    # #[derive(Debug, Clone)]
-    # struct Ether {
-    #    ether_type: EtherType
-    # }
-    # impl Layer for Ether {}
-    # impl LayerExt for Ether {
-    #     fn finalize(&mut self, prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
-    #         unimplemented!();
-    #     }
-    #
-    #     fn parse(input: &[u8]) -> Result<(&[u8], Self), LayerError>
-    #     where
-    #         Self: Sized,
-    #     {
-    #         Ok((input, Ether { ether_type: EtherType::Ipv4 }))
-    #     }
-    #
-    #     fn to_bytes(&self) -> Result<Vec<u8>, LayerError> {
-    #         unimplemented!()
-    #     }
-    # }
-    # impl Layer for Ipv4 {}
-    # impl LayerExt for Ipv4 {
-    #     fn finalize(&mut self, prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
-    #         unimplemented!();
-    #     }
-    #
-    #     fn parse(input: &[u8]) -> Result<(&[u8], Self), LayerError>
-    #     where
-    #         Self: Sized,
-    #     {
-    #         Ok((input, Ipv4 {}))
-    #     }
-    #
-    #     fn to_bytes(&self) -> Result<Vec<u8>, LayerError> {
-    #         unimplemented!()
-    #     }
-    # }
-    # #[derive(Debug, Clone)]
-    # struct Ipv4 {}
-    # fn main() {
-        let mut packet_parser = PacketParser::without_bindings();
-
-        packet_parser.bind_layer(|ether: &Ether, _rest| {
-            match ether.ether_type {
-                EtherType::Ipv4 => Some(Ipv4::parse_layer),
-                // ...
-                _ => None
+    /// Add a typed, chainable binding from one layer to another.
+    ///
+    /// The predicate receives the current layer and the remaining input. If
+    /// it returns `true`, `To` is parsed next. Bindings added later take
+    /// precedence over earlier bindings for the same source layer.
+    pub fn bind<From, To>(mut self, predicate: impl 'static + Fn(&From, &[u8]) -> bool) -> Self
+    where
+        From: PacketLayer + 'static,
+        To: PacketLayer + 'static,
+    {
+        self.bind_layer(move |layer: &From, rest| {
+            if predicate(layer, rest) {
+                Some(To::parse_layer)
+            } else {
+                None
             }
         });
+        self
+    }
 
-    #   let input = b"input";
-        let (rest, packet) = packet_parser.parse_packet::<Ether>(input).unwrap();
-
-        let layers = packet.layers();
-        assert_eq!(2, layers.len());
-        assert!(is_layer!(layers[0], Ether));
-        assert!(is_layer!(layers[1], Ipv4));
-    # }
-    ```
-    */
-    pub fn bind_layer<LayerType: LayerExt + 'static, F>(&mut self, f: F)
+    /// Add an advanced dynamic binding to the packet parser.
+    ///
+    /// The callback receives the current typed layer and remaining input. It
+    /// may return any layer parser, which is useful when one source layer can
+    /// lead to multiple protocol types. For a fixed destination type, prefer
+    /// the chainable [`PacketParser::bind`] API.
+    pub fn bind_layer<LayerType: PacketLayer + 'static, F>(&mut self, f: F)
     where
         F: 'static
             + Fn(
                 &LayerType,
                 &[u8],
-            )
-                -> Option<fn(&[u8]) -> Result<(&[u8], Box<dyn LayerExt>), crate::layer::LayerError>>,
+            ) -> Option<
+                fn(&[u8]) -> Result<(&[u8], Box<dyn PacketLayer>), crate::layer::LayerError>,
+            >,
     {
         let tid = TypeId::of::<LayerType>();
         let bindings = self.layer_bindings.entry(tid).or_default();
         (*bindings).push(Box::new(
-            move |current_layer: &dyn LayerExt, rest: &[u8]| -> _ {
+            move |current_layer: &dyn PacketLayer, rest: &[u8]| -> _ {
                 // SAFETY: This callback is only to be called if the layer type is `LayerType` therefor we
                 // can safely unwrap here.
-                let l =
-                    get_layer!(current_layer, LayerType).expect("dev error: This is always Some");
+                let l = current_layer
+                    .as_any()
+                    .downcast_ref::<LayerType>()
+                    .expect("dev error: This is always Some");
                 f(l, rest)
             },
         ));
     }
 
-    /// Parse a packet from bytes, returning the un-parsed data
-    pub fn parse_packet<'a, T: LayerExt + 'static>(
+    /// Parse a complete packet from bytes.
+    ///
+    /// This is the high-level, strict parsing entry point: it returns an error
+    /// if the parser stops before consuming all input. Use
+    /// [`PacketParser::parse_partial`] when trailing bytes are expected.
+    pub fn parse<T: PacketLayer + 'static>(&self, input: &[u8]) -> Result<Packet, PacketError> {
+        let (rest, packet) = self.parse_partial::<T>(input)?;
+        if rest.is_empty() {
+            Ok(packet)
+        } else {
+            Err(PacketError::TrailingData(rest.len()))
+        }
+    }
+
+    /// Parse a packet, returning any unparsed trailing data.
+    ///
+    pub fn parse_partial<'a, T: PacketLayer + 'static>(
         &self,
         input: &'a [u8],
     ) -> Result<(&'a [u8], Packet), PacketError> {
@@ -220,7 +358,7 @@ impl PacketParser {
 
         let (mut rest, layer) = T::parse(input)?;
 
-        let mut current_layer: Box<dyn LayerExt> = Box::new(layer);
+        let mut current_layer: Box<dyn PacketLayer> = Box::new(layer);
 
         // Given the currently parsed layer:
         //  - Lookup the layer bindings for the current layer
@@ -272,7 +410,7 @@ impl PacketParser {
 
         layers.push(current_layer);
 
-        Ok((rest, Packet::from_layers(layers)))
+        Ok((rest, Packet::from_boxed_layers(layers)))
     }
 }
 
@@ -285,10 +423,7 @@ impl Default for PacketParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        get_layer,
-        layer::{Layer, LayerError, LayerExt},
-    };
+    use crate::layer::{LayerError, PacketLayer};
 
     macro_rules! declare_test_layer {
         ($name:ident, $bytes:tt) => {
@@ -300,8 +435,7 @@ mod tests {
                     Self {}
                 }
             }
-            impl Layer for $name {}
-            impl LayerExt for $name {
+            impl PacketLayer for $name {
                 fn finalize(
                     &mut self,
                     _prev: &[LayerOwned],
@@ -331,35 +465,21 @@ mod tests {
     declare_test_layer!(Layer2, b"layer2");
 
     #[test]
-    fn test_packet_view_from_layers() {
-        let layer0 = Layer0::new();
-        let layer1 = Layer1::new();
-
-        let layers: Vec<LayerRef> = vec![&layer0, &layer1];
-        let packet = PacketView::from_layers(layers);
-        assert_eq!(2, packet.layers.len());
+    fn test_packet_owned_layers() {
+        let mut packet = Packet::from_layer(Layer0::new());
+        packet.push(Layer1::new());
+        assert_eq!(2, packet.as_ref().len());
     }
 
     #[test]
-    fn test_packet_owned_from_layers() {
-        let layer0 = Box::new(Layer0::new());
-        let layer1 = Box::new(Layer1::new());
-
-        let layers: Vec<LayerOwned> = vec![layer0, layer1];
-        let mut packet = Packet::from_layers(layers);
-        assert_eq!(2, packet.layers().len());
-        assert_eq!(2, packet.layers_mut().len());
-    }
-
-    #[test]
-    fn test_packet_to_bytes() {
+    fn test_packet_bytes() {
         let layer0 = Box::new(Layer0::new());
         let layer1 = Box::new(Layer1::new());
         let layer2 = Box::new(Layer2::new());
 
         let layers: Vec<LayerOwned> = vec![layer0, layer1, layer2];
-        let packet = Packet::from_layers(layers);
-        assert_eq!(b"layer0layer1layer2".to_vec(), packet.to_bytes().unwrap());
+        let packet = Packet::from_boxed_layers(layers);
+        assert_eq!(b"layer0layer1layer2".to_vec(), packet.into_bytes().unwrap());
     }
 
     #[test]
@@ -369,7 +489,7 @@ mod tests {
             let layers: Vec<LayerOwned> = (0..i)
                 .map(|_| Box::new(Layer0::new()) as LayerOwned)
                 .collect();
-            let mut packet = Packet::from_layers(layers);
+            let mut packet = Packet::from_boxed_layers(layers);
             packet.finalize().unwrap();
         }
     }
@@ -393,8 +513,7 @@ mod tests {
             }
         }
 
-        impl Layer for TestLayer {}
-        impl LayerExt for TestLayer {
+        impl PacketLayer for TestLayer {
             fn finalize(
                 &mut self,
                 prev: &[LayerOwned],
@@ -423,15 +542,11 @@ mod tests {
             Box::new(TestLayer::new(1, 1)),
             Box::new(TestLayer::new(2, 0)),
         ];
-        let mut packet = Packet::from_layers(layers);
+        let mut packet = Packet::from_boxed_layers(layers);
         packet.finalize().unwrap();
 
         // Get layers back as `TestLayer`
-        let test_layers: Vec<_> = packet
-            .layers
-            .iter()
-            .map(|v| get_layer!(v, TestLayer).unwrap())
-            .collect();
+        let test_layers: Vec<_> = packet.get_all::<TestLayer>().collect();
 
         assert_eq!(3, test_layers.len());
         for layer in test_layers {
@@ -477,7 +592,7 @@ mod tests {
 
         assert_eq!(1, pb.layer_bindings.len());
 
-        pb.parse_packet::<Layer0>(b"layer0").unwrap();
+        pb.parse_partial::<Layer0>(b"layer0").unwrap();
     }
 
     #[test]
@@ -488,46 +603,124 @@ mod tests {
         {
             pb.bind_layer(|_from: &Layer0, _rest| None);
 
-            let (rest, packet) = pb.parse_packet::<Layer0>(b"layer0").unwrap();
-            assert_eq!(1, packet.layers.len());
+            let (rest, packet) = pb.parse_partial::<Layer0>(b"layer0").unwrap();
+            let mut layers = packet.as_ref().iter();
             assert!(rest.is_empty());
-            assert!(get_layer!(packet.layers[0], Layer0).is_some());
+            assert!(layers.next().unwrap().as_any().is::<Layer0>());
+            assert!(layers.next().is_none());
         }
 
         {
             pb.bind_layer(|_from: &Layer0, _rest| Some(Layer1::parse_layer));
 
-            let (rest, packet) = pb.parse_packet::<Layer0>(b"layer0layer1").unwrap();
-            assert_eq!(2, packet.layers.len());
+            let (rest, packet) = pb.parse_partial::<Layer0>(b"layer0layer1").unwrap();
+            let mut layers = packet.as_ref().iter();
             assert!(rest.is_empty());
-            assert!(get_layer!(packet.layers[0], Layer0).is_some());
-            assert!(get_layer!(packet.layers[1], Layer1).is_some());
+            assert!(layers.next().unwrap().as_any().is::<Layer0>());
+            assert!(layers.next().unwrap().as_any().is::<Layer1>());
+            assert!(layers.next().is_none());
         }
     }
 
     #[test]
-    fn test_packet_parse_packet_binding_order() {
+    fn test_packet_binding_order() {
         let mut pb = PacketParser::without_bindings();
         assert_eq!(0, pb.layer_bindings.len());
 
         {
             pb.bind_layer(|_from: &Layer0, _rest| Some(Layer1::parse_layer));
 
-            let (rest, packet) = pb.parse_packet::<Layer0>(b"layer0layer1").unwrap();
-            assert_eq!(2, packet.layers.len());
+            let (rest, packet) = pb.parse_partial::<Layer0>(b"layer0layer1").unwrap();
+            let mut layers = packet.as_ref().iter();
             assert!(rest.is_empty());
-            assert!(get_layer!(packet.layers[0], Layer0).is_some());
-            assert!(get_layer!(packet.layers[1], Layer1).is_some());
+            assert!(layers.next().unwrap().as_any().is::<Layer0>());
+            assert!(layers.next().unwrap().as_any().is::<Layer1>());
+            assert!(layers.next().is_none());
         }
 
         {
             pb.bind_layer(|_from: &Layer0, _rest| Some(Layer2::parse_layer));
 
-            let (rest, packet) = pb.parse_packet::<Layer0>(b"layer0layer2").unwrap();
-            assert_eq!(2, packet.layers.len());
+            let (rest, packet) = pb.parse_partial::<Layer0>(b"layer0layer2").unwrap();
+            let mut layers = packet.as_ref().iter();
             assert!(rest.is_empty());
-            assert!(get_layer!(packet.layers[0], Layer0).is_some());
-            assert!(get_layer!(packet.layers[1], Layer2).is_some());
+            assert!(layers.next().unwrap().as_any().is::<Layer0>());
+            assert!(layers.next().unwrap().as_any().is::<Layer2>());
+            assert!(layers.next().is_none());
         }
+    }
+
+    #[test]
+    fn test_packet_builder_and_typed_access() {
+        use crate::layer::{
+            ether::{Ether, MacAddress},
+            ip::{IpProtocol, Ipv4},
+            raw::Raw,
+            udp::Udp,
+        };
+        use core::net::Ipv4Addr;
+
+        let mut packet = Packet::builder()
+            .layer(Ether::new(
+                MacAddress::new([0x02, 0, 0, 0, 0, 1]),
+                MacAddress::new([0x02, 0, 0, 0, 0, 2]),
+            ))
+            .layer(
+                Ipv4::new(Ipv4Addr::new(192, 0, 2, 1), Ipv4Addr::new(198, 51, 100, 2))
+                    .protocol(IpProtocol::UDP),
+            )
+            .layer(Udp::new(40_000, 53))
+            .payload(b"hello")
+            .build()
+            .unwrap();
+
+        assert!(packet.has::<Ether>());
+        assert_eq!(40_000, packet.get::<Udp>().unwrap().sport);
+        assert_eq!(b"hello", packet.get::<Raw>().unwrap().payload());
+
+        packet.get_mut::<Ipv4>().unwrap().ttl = 42;
+        assert_eq!(42, packet.get::<Ipv4>().unwrap().ttl);
+
+        let packet_ref = packet.as_ref();
+        assert_eq!(4, packet_ref.len());
+        assert!(packet_ref.has::<Raw>());
+        assert_eq!("Ether / Ipv4 / Udp / Raw", packet_ref.summary());
+
+        let bytes = packet.bytes().unwrap();
+        let parsed = PacketParser::new()
+            .parse::<crate::layer::ether::Ether>(&bytes)
+            .unwrap();
+        assert_eq!(b"hello", parsed.get::<Raw>().unwrap().payload());
+    }
+
+    #[test]
+    fn test_packet_slash_composition() {
+        use crate::layer::{
+            ether::{Ether, MacAddress},
+            ip::Ipv4,
+            raw::Raw,
+            udp::Udp,
+        };
+        use core::net::Ipv4Addr;
+
+        let mut packet = Ether::new(MacAddress::default(), MacAddress::default()).into_packet()
+            / Ipv4::new(Ipv4Addr::new(192, 0, 2, 1), Ipv4Addr::new(198, 51, 100, 2))
+            / Udp::new(1, 2)
+            / Raw::new(b"payload");
+
+        assert_eq!("Ether / Ipv4 / Udp / Raw", packet.summary());
+        assert!(!packet.bytes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parser_typed_binding_and_strict_parse() {
+        let parser = PacketParser::without_bindings().bind::<Layer0, Layer1>(|_, _| true);
+        let packet = parser.parse::<Layer0>(b"layer0layer1").unwrap();
+        assert_eq!("Layer0 / Layer1", packet.summary());
+
+        let error = PacketParser::without_bindings()
+            .parse::<Layer0>(b"layer0tail")
+            .unwrap_err();
+        assert_eq!(PacketError::TrailingData(4), error);
     }
 }

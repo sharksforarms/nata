@@ -1,19 +1,7 @@
 #![no_std]
 
-extern crate alloc;
-
-use alloc::{boxed::Box, vec, vec::Vec};
-use nata::{
-    get_layer,
-    layer::{
-        ether::{Ether, EtherType, MacAddress},
-        ip::{IpProtocol, Ipv4},
-        raw::Raw,
-        udp::Udp,
-        LayerOwned,
-    },
-    packet::{Packet, PacketParser},
-};
+use core::net::Ipv4Addr;
+use nata::prelude::*;
 
 pub const PAYLOAD: &[u8] = b"nata/no_std";
 
@@ -30,23 +18,10 @@ pub struct UdpSummary {
 /// Parse an Ethernet/IPv4/UDP frame and return the fields relevant to an
 /// embedded application.
 pub fn inspect_udp_frame(frame: &[u8]) -> Option<UdpSummary> {
-    let (rest, packet) = PacketParser::new().parse_packet::<Ether>(frame).ok()?;
-    if !rest.is_empty() {
-        return None;
-    }
-
-    let ipv4 = packet
-        .layers()
-        .iter()
-        .find_map(|layer| get_layer!(layer, Ipv4))?;
-    let udp = packet
-        .layers()
-        .iter()
-        .find_map(|layer| get_layer!(layer, Udp))?;
-    let raw = packet
-        .layers()
-        .iter()
-        .find_map(|layer| get_layer!(layer, Raw))?;
+    let packet = parse(frame).ok()?;
+    let ipv4 = packet.get::<Ipv4>()?;
+    let udp = packet.get::<Udp>()?;
+    let raw = packet.get::<Raw>()?;
 
     Some(UdpSummary {
         source_address: ipv4.src,
@@ -59,33 +34,21 @@ pub fn inspect_udp_frame(frame: &[u8]) -> Option<UdpSummary> {
 
 /// Construct and inspect a packet using only Nata's `no_std` APIs.
 pub fn build_and_inspect_udp() -> Option<UdpSummary> {
-    let layers: Vec<LayerOwned> = vec![
-        Box::new(Ether {
-            dst: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]),
-            src: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
-            ether_type: EtherType::IPv4,
-        }),
-        Box::new(Ipv4 {
-            src: 0xc000_0201, // 192.0.2.1
-            dst: 0xc633_6402, // 198.51.100.2
-            ttl: 64,
-            protocol: IpProtocol::UDP,
-            ..Ipv4::default()
-        }),
-        Box::new(Udp {
-            sport: 40_000,
-            dport: 53,
-            ..Udp::default()
-        }),
-        Box::new(Raw {
-            data: PAYLOAD.to_vec(),
-            ..Raw::default()
-        }),
-    ];
+    let mut packet = Packet::builder()
+        .layer(Ether::new(
+            MacAddress::new([0x02, 0, 0, 0, 0, 1]),
+            MacAddress::new([0x02, 0, 0, 0, 0, 2]),
+        ))
+        .layer(
+            Ipv4::new(Ipv4Addr::new(192, 0, 2, 1), Ipv4Addr::new(198, 51, 100, 2))
+                .protocol(IpProtocol::UDP),
+        )
+        .layer(Udp::new(40_000, 53))
+        .payload(PAYLOAD)
+        .build()
+        .ok()?;
 
-    let mut packet = Packet::from_layers(layers);
-    packet.finalize().ok()?;
-    inspect_udp_frame(&packet.to_bytes().ok()?)
+    inspect_udp_frame(&packet.bytes().ok()?)
 }
 
 #[cfg(test)]

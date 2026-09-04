@@ -2,9 +2,8 @@
 UDP layer
 */
 
-use crate::get_layer;
 use crate::layer::ip::{IpProtocol, Ipv4, Ipv6};
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 use alloc::{format, string::ToString, vec::Vec};
 use core::convert::TryFrom;
 use deku::prelude::*;
@@ -33,6 +32,29 @@ pub struct Udp {
     pub length: u16,
     /// Checksum
     pub checksum: u16,
+}
+
+impl Udp {
+    /// Construct a UDP header with the supplied ports.
+    pub fn new(sport: u16, dport: u16) -> Self {
+        Self {
+            sport,
+            dport,
+            ..Self::default()
+        }
+    }
+
+    /// Set the source port.
+    pub fn sport(mut self, sport: u16) -> Self {
+        self.sport = sport;
+        self
+    }
+
+    /// Set the destination port.
+    pub fn dport(mut self, dport: u16) -> Self {
+        self.dport = dport;
+        self
+    }
 }
 
 /// Ipv6 pseudo header used in udp checksum calculation
@@ -81,11 +103,10 @@ impl Ipv4PseudoHeader {
     }
 }
 
-impl Layer for Udp {}
-impl LayerExt for Udp {
+impl PacketLayer for Udp {
     fn finalize(&mut self, prev: &[LayerOwned], next: &[LayerOwned]) -> Result<(), LayerError> {
         let udp_header = {
-            let mut data = LayerExt::to_bytes(self)?;
+            let mut data = PacketLayer::to_bytes(self)?;
 
             // Clear checksum bytes for calculation
             data[6] = 0x00;
@@ -112,7 +133,7 @@ impl LayerExt for Udp {
 
         // Update the udp checksum
         if let Some(prev_layer) = prev.last() {
-            let ip_pseudo_header = if let Some(ipv4) = get_layer!(prev_layer, Ipv4) {
+            let ip_pseudo_header = if let Some(ipv4) = prev_layer.as_any().downcast_ref::<Ipv4>() {
                 Some(
                     Ipv4PseudoHeader::new(
                         ipv4,
@@ -122,7 +143,7 @@ impl LayerExt for Udp {
                     )
                     .to_bytes()?,
                 )
-            } else if let Some(ipv6) = get_layer!(prev_layer, Ipv6) {
+            } else if let Some(ipv6) = prev_layer.as_any().downcast_ref::<Ipv6>() {
                 Some(
                     Ipv6PseudoHeader::new(
                         ipv6,
@@ -166,6 +187,7 @@ impl LayerExt for Udp {
 mod tests {
     use super::*;
     use crate::layer::ip::{Ipv4, Ipv6};
+    use crate::layer::PacketLayer;
     use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
@@ -180,12 +202,11 @@ mod tests {
                 fn new() -> Self {
                     Self {}
                 }
-                fn boxed() -> Box<dyn LayerExt> {
+                fn boxed() -> Box<dyn PacketLayer> {
                     Box::new(Self {})
                 }
             }
-            impl Layer for $name {}
-            impl LayerExt for $name {
+            impl PacketLayer for $name {
                 fn finalize(
                     &mut self,
                     _prev: &[LayerOwned],
@@ -226,7 +247,7 @@ mod tests {
         let ret_read = Udp::try_from(input).unwrap();
         assert_eq!(expected, ret_read);
 
-        let ret_write = LayerExt::to_bytes(&ret_read).unwrap();
+        let ret_write = PacketLayer::to_bytes(&ret_read).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 

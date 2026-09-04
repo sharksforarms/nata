@@ -3,7 +3,7 @@ Layer parsing and construction
 
 A layer is a slice of a packet, the protocol definition.
 
-A layer is represented by the marker trait [Layer](self::Layer) and [LayerExt](self::LayerExt), the implementation trait.
+A packet layer is represented by [`PacketLayer`].
 
 Internally, nata uses [deku](https://github.com/sharksforarms/deku) to easily handle the
 symmetric serialization and deserialization of layers.
@@ -12,7 +12,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::any::Any;
 
 pub mod error;
-pub mod utils;
+pub(crate) mod utils;
 pub use error::LayerError;
 
 pub mod ether;
@@ -25,23 +25,27 @@ pub mod udp;
 #[doc(hidden)]
 pub trait AsAny {
     fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-// AsAny trait implemented on all layers
-// to be able to dynamically retrieve original type
-impl<T: Any + Layer> AsAny for T {
+// AsAny is implemented on all `Any` values so `PacketLayer` can support typed
+// downcasts.
+impl<T: Any> AsAny for T {
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
 
-/// Represents a section of a packet
+/// A packet layer that can be parsed, finalized, and serialized.
 ///
-/// Any is used in order to retrieve the original layer type, see [get_layer!](crate::get_layer) macro
-pub trait Layer: AsAny {}
-
-/// Extension of a layer to allow parsing and construction
-pub trait LayerExt: core::fmt::Debug + Layer + LayerClone {
+/// New layers only need to implement this trait. Because packets are
+/// cloneable, implementors must also be `Clone` (or provide a
+/// [`LayerClone`] implementation).
+pub trait PacketLayer: core::fmt::Debug + AsAny + LayerClone {
     /// Finalize a layer
     ///
     /// Previous and next layers are passed as arguments to update fields in relation to previous
@@ -60,18 +64,26 @@ pub trait LayerExt: core::fmt::Debug + Layer + LayerClone {
 
     /// Parse a layer from bytes
     ///
-    /// Returns the remaining un-parsed data and a dyn Layer
-    fn parse_layer(input: &[u8]) -> Result<(&[u8], Box<dyn LayerExt>), LayerError>
+    /// Returns the remaining un-parsed data and a boxed [`PacketLayer`].
+    fn parse_layer(input: &[u8]) -> Result<(&[u8], Box<dyn PacketLayer>), LayerError>
     where
         Self: 'static + Sized,
     {
-        Self::parse(input).map(|(rest, layer)| (rest, Box::new(layer) as Box<dyn LayerExt>))
+        Self::parse(input).map(|(rest, layer)| (rest, Box::new(layer) as Box<dyn PacketLayer>))
     }
 
     /// Serialize the layer to bytes
     fn to_bytes(&self) -> Result<Vec<u8>, LayerError>;
 
-    /// Return's serialized length in bytes of the layer
+    /// Return a short display name for this layer.
+    fn name(&self) -> &'static str {
+        core::any::type_name::<Self>()
+            .rsplit("::")
+            .next()
+            .unwrap_or("Layer")
+    }
+
+    /// Return the serialized length in bytes of the layer
     ///
     /// This method calls `to_bytes` and returns the length.
     ///
@@ -82,109 +94,42 @@ pub trait LayerExt: core::fmt::Debug + Layer + LayerClone {
     }
 }
 
-/// A reference to a [Layer](self::Layer)
-pub type LayerRef<'a> = &'a dyn Layer;
+/// A boxed [`PacketLayer`].
+pub type LayerOwned = Box<dyn PacketLayer>;
 
-/// A boxed [LayerExt](self::LayerExt)
-pub type LayerOwned = Box<dyn LayerExt>;
-
-/// Trait used to make a LayerExt clone'able
+/// Trait used to make a [`PacketLayer`] cloneable.
 pub trait LayerClone {
     /// Clone a layer
-    fn clone_box(&self) -> Box<dyn LayerExt>;
+    fn clone_box(&self) -> Box<dyn PacketLayer>;
 }
 
-impl<T: 'static + LayerExt + Clone> LayerClone for T {
-    fn clone_box(&self) -> Box<dyn LayerExt> {
+impl<T: 'static + PacketLayer + Clone> LayerClone for T {
+    fn clone_box(&self) -> Box<dyn PacketLayer> {
         Box::new(self.clone())
     }
 }
 
-impl Clone for Box<dyn LayerExt> {
-    fn clone(&self) -> Box<dyn LayerExt> {
+impl Clone for Box<dyn PacketLayer> {
+    fn clone(&self) -> Box<dyn PacketLayer> {
         self.clone_box()
     }
 }
 
-/**
-Retrieve original type from a layer
-
-# Example
-
-```rust
-# use nata::layer::Layer;
-# use nata::get_layer;
-# struct Ether {}
-# impl Ether {
-#    pub fn new() -> Self {
-#        Ether {}
-#    }
-# }
-# impl Layer for Ether {}
-# struct Ipv4 {}
-# impl Layer for Ipv4 {}
-let layer: &dyn Layer = &Ether::new();
-assert!(get_layer!(layer, Ether).is_some());
-assert!(get_layer!(layer, Ipv4).is_none());
-```
-*/
-#[macro_export]
-macro_rules! get_layer {
-    ($layer:expr, $layer_ty:ty) => {
-        $layer.as_any().downcast_ref::<$layer_ty>()
-    };
+/// Convert a concrete layer into the erased representation used by a
+/// [`Packet`](crate::packet::Packet).
+pub trait IntoLayer {
+    /// Convert this value into an owned packet layer.
+    fn into_layer(self) -> LayerOwned;
 }
 
-/**
-Test if a layer is of a certain type
-
-# Example
-
-```rust
-# use nata::layer::Layer;
-# use nata::is_layer;
-# struct Ether {}
-# impl Ether {
-#    pub fn new() -> Self {
-#        Ether {}
-#    }
-# }
-# impl Layer for Ether {}
-# struct Ipv4 {}
-# impl Layer for Ipv4 {}
-let layer: &dyn Layer = &Ether::new();
-assert!(is_layer!(layer, Ether));
-assert!(!is_layer!(layer, Ipv4));
-```
-*/
-#[macro_export]
-macro_rules! is_layer {
-    ($layer:expr, $layer_ty:ty) => {
-        $layer.as_any().is::<$layer_ty>()
-    };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct TestLayer {}
-    impl Layer for TestLayer {}
-
-    struct TestLayerOther {}
-    impl Layer for TestLayerOther {}
-
-    #[test]
-    fn test_get_layer_macro() {
-        let layer: &dyn Layer = &TestLayer {};
-        assert!(get_layer!(layer, TestLayer).is_some());
-        assert!(get_layer!(layer, TestLayerOther).is_none());
+impl<T: PacketLayer + 'static> IntoLayer for T {
+    fn into_layer(self) -> LayerOwned {
+        Box::new(self)
     }
+}
 
-    #[test]
-    fn test_is_layer_macro() {
-        let layer: &dyn Layer = &TestLayer {};
-        assert!(is_layer!(layer, TestLayer));
-        assert!(!is_layer!(layer, TestLayerOther));
+impl IntoLayer for LayerOwned {
+    fn into_layer(self) -> LayerOwned {
+        self
     }
 }

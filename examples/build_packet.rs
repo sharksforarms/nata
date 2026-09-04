@@ -1,50 +1,23 @@
-use nata::{
-    is_layer,
-    layer::{
-        ether::{Ether, EtherType, MacAddress},
-        ip::{IpProtocol, Ipv4},
-        raw::Raw,
-        udp::Udp,
-        LayerOwned,
-    },
-    packet::{Packet, PacketParser},
-};
+use nata::prelude::*;
+use std::net::Ipv4Addr;
 
 fn main() {
-    let layers: Vec<LayerOwned> = vec![
-        Box::new(Ether {
-            dst: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]),
-            src: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
-            ether_type: EtherType::IPv4,
-        }),
-        Box::new(Ipv4 {
-            src: 0xc000_0201, // 192.0.2.1
-            dst: 0xc633_6402, // 198.51.100.2
-            ttl: 64,
-            protocol: IpProtocol::UDP,
-            ..Ipv4::default()
-        }),
-        Box::new(Udp {
-            sport: 40_000,
-            dport: 53,
-            ..Udp::default()
-        }),
-        Box::new(Raw {
-            data: b"hello from nata".to_vec(),
-            ..Raw::default()
-        }),
-    ];
+    let src_mac = MacAddress::new([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
+    let dst_mac = MacAddress::new([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
+    let src_ip = Ipv4Addr::new(192, 0, 2, 1);
+    let dst_ip = Ipv4Addr::new(198, 51, 100, 2);
 
-    let mut packet = Packet::from_layers(layers);
-    packet.finalize().unwrap();
+    let mut packet = Packet::builder()
+        .layer(Ether::new(src_mac, dst_mac))
+        .layer(Ipv4::new(src_ip, dst_ip).protocol(IpProtocol::UDP))
+        .layer(Udp::new(40_000, 53))
+        .payload(b"hello from nata")
+        .build()
+        .unwrap();
 
-    let bytes = packet.to_bytes().unwrap();
-    let (rest, parsed) = PacketParser::new().parse_packet::<Ether>(&bytes).unwrap();
+    let bytes = packet.bytes().unwrap();
+    let parsed = parse(&bytes).unwrap();
 
-    assert!(rest.is_empty());
-    assert_eq!(parsed.layers().len(), 4);
-    assert!(is_layer!(parsed.layers()[0], Ether));
-    assert!(is_layer!(parsed.layers()[1], Ipv4));
-    assert!(is_layer!(parsed.layers()[2], Udp));
-    assert!(is_layer!(parsed.layers()[3], Raw));
+    assert_eq!(parsed.as_ref().len(), 4);
+    assert_eq!("Ether / Ipv4 / Udp / Raw", parsed.summary());
 }

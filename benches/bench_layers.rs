@@ -9,7 +9,7 @@ use nata::layer::ip::{Ipv4, Ipv6};
 use nata::layer::raw::Raw;
 use nata::layer::tcp::Tcp;
 use nata::layer::udp::Udp;
-use nata::layer::LayerExt;
+use nata::layer::PacketLayer;
 
 macro_rules! gen_header_bench {
     ($crit:ident, $name:ident, $data:expr, $layer:ident) => {

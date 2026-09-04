@@ -21,6 +21,31 @@ pub struct Pcap {
     writer: PcapWriter,
 }
 
+impl Pcap {
+    /// Open a live capture and injection interface.
+    pub fn open(interface_name: &str) -> Result<Interface<PcapReader, PcapWriter>, DataLinkError> {
+        <Self as PacketInterface>::init(interface_name)
+    }
+
+    /// Open a live interface with a custom packet parser.
+    pub fn open_with_parser(
+        interface_name: &str,
+        packet_parser: PacketParser,
+    ) -> Result<Interface<PcapReader, PcapWriter>, DataLinkError> {
+        <Self as PacketInterface>::init_with_parser(interface_name, packet_parser)
+    }
+
+    /// Open a read-only live capture interface.
+    pub fn reader(interface_name: &str) -> Result<InterfaceReader<PcapReader>, DataLinkError> {
+        <Self as PacketInterfaceRead>::init(interface_name)
+    }
+
+    /// Open a write-only live injection interface.
+    pub fn sender(interface_name: &str) -> Result<InterfaceWriter<PcapWriter>, DataLinkError> {
+        <Self as PacketInterfaceWrite>::init(interface_name)
+    }
+}
+
 /// LibPcap reader
 pub struct PcapReader {
     packet_parser: PacketParser,
@@ -121,7 +146,7 @@ impl PacketRead for PcapReader {
     fn read(&mut self) -> Result<Packet, DataLinkError> {
         match self.reader.next() {
             Ok(packet_bytes) => {
-                let (_rest, packet) = self.packet_parser.parse_packet::<Ether>(packet_bytes)?;
+                let (_rest, packet) = self.packet_parser.parse_partial::<Ether>(packet_bytes)?;
                 // TODO: log warning of un-read data?
                 Ok(packet)
             }
@@ -137,8 +162,8 @@ impl PacketWrite for Pcap {
 }
 
 impl PacketWrite for PcapWriter {
-    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
-        let bytes = packet.to_bytes()?;
+    fn write(&mut self, mut packet: Packet) -> Result<(), DataLinkError> {
+        let bytes = packet.bytes()?;
         if let Some(res) = self.writer.send_to(bytes.as_ref(), None) {
             Ok(res?)
         } else {

@@ -3,7 +3,7 @@
 //! This exercises Nata's complete offline I/O path: each captured frame is
 //! decoded into typed layers, serialized again, and stored in a new PCAP file.
 
-use nata::datalink::{pcapfile::PcapFile, InterfaceReader, InterfaceWriter, PacketWrite};
+use nata::datalink::{pcapfile::PcapFile, PacketReadExt, PacketWrite};
 use std::{env, fs, process};
 
 fn usage(program: &str) -> ! {
@@ -26,15 +26,15 @@ fn main() {
         process::exit(2);
     }
 
-    let mut reader = InterfaceReader::init::<PcapFile>(&input).expect("failed to open input PCAP");
-    let mut writer =
-        InterfaceWriter::init::<PcapFile>(&output).expect("failed to create output PCAP");
+    let mut reader = PcapFile::open(&input).expect("failed to open input PCAP");
+    let mut writer = PcapFile::create(&output).expect("failed to create output PCAP");
     let mut packet_count = 0;
 
-    for packet in &mut reader {
+    for packet in reader.try_iter() {
+        let packet = packet.expect("failed to read input PCAP");
         packet_count += 1;
         println!("Packet {packet_count}: {packet:?}");
-        writer.write(packet).expect("failed to write packet");
+        writer.send(packet).expect("failed to write packet");
     }
 
     println!("Wrote {packet_count} packets to {output}");

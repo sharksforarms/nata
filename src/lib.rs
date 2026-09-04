@@ -7,18 +7,20 @@ Nata enables extensible parsing and crafting of network packets.
 
 # Layer
 
-A Layer represents the layout structure of a specific protocol (such as [Tcp](crate::layer::tcp::Tcp)).
+A [`PacketLayer`](crate::layer::PacketLayer) represents the layout structure
+of a specific protocol (such as [Tcp](crate::layer::tcp::Tcp)).
 
-Nata has [layer implementations](./layer/trait.LayerExt.html#implementors) for many core network protocols.
+Nata has [layer implementations](./layer/trait.PacketLayer.html#implementors)
+for many core network protocols.
 
-For custom protocols or those implemented in nata already, see [layer](crate::layer) for examples on adding a new layer.
+For custom protocols or those implemented in nata already, see [layer] for examples on adding a new layer.
 
 If you think a protocol should be included by default in nata, consider contributing! See [here](https://github.com/sharksforarms/nata) for more information.
 
 ## Example
 
 ```rust
-use nata::layer::LayerExt;
+use nata::layer::PacketLayer;
 use nata::layer::ether::{Ether, EtherType, MacAddress};
 # use hexlit::hex;
 
@@ -41,34 +43,25 @@ assert_eq!(data, ether_bytes);
 
 Data sent over a network such as the Internet, are split up into packets.
 
-A [Packet](crate::packet::Packet) is defined as a collection of
-[Layer](crate::layer::Layer).
+A [Packet](crate::packet::Packet) is defined as an ordered collection of
+[PacketLayer](crate::layer::PacketLayer)s.
 
 ## Example
 
 ```rust
 
-use nata::packet::Packet;
-use nata::layer::{
-    LayerExt,
-    LayerOwned,
-    ether::Ether,
-    ip::ipv4::Ipv4,
-    tcp::Tcp,
-    raw::Raw,
-};
+use nata::prelude::*;
 
-let layers: Vec<LayerOwned> = vec![
-    Box::new(Ether::default()),
-    Box::new(Ipv4::default()),
-    Box::new(Tcp::default()),
-    Box::new(Raw::parse(b"hello world").unwrap().1),
-];
+let mut packet = Packet::builder()
+    .layer(Ether::default())
+    .layer(Ipv4::default())
+    .layer(Tcp::default())
+    .payload(b"hello world")
+    .build()
+    .unwrap();
 
-let mut packet = Packet::from_layers(layers);
-
-// Update length fields, checksums, etc.
-packet.finalize().unwrap();
+// `bytes` updates length fields, offsets, and checksums before serializing.
+let _bytes = packet.bytes().unwrap();
 
 ```
 
@@ -77,18 +70,17 @@ packet.finalize().unwrap();
 The packet parser defines the heuristics on which layer to parse next, given the current layer and
 the remaining bytes.
 
-Nata provides default layer bindings for layers it implements. These can be found [here](crate::packet::bindings).
+Nata provides default bindings for the built-in layers. They cover Ethernet to
+IPv4/IPv6, IPv4/IPv6 to TCP/UDP/ICMP, and transport protocols to raw payloads.
 
 ```rust
-use nata::packet::PacketParser;
+use nata::packet::Parser;
 use nata::layer::{
-    Layer,
-    LayerExt,
+    PacketLayer,
     ether::Ether,
     ip::ipv4::Ipv4,
     tcp::Tcp,
 };
-use nata::is_layer;
 # use hexlit::hex;
 # use nata::layer::{LayerOwned, LayerError};
 
@@ -96,8 +88,7 @@ use nata::is_layer;
 #[derive(Debug, Clone)]
 struct Http {}
 
-impl Layer for Http {}
-impl LayerExt for Http {
+impl PacketLayer for Http {
     // ...
 #     fn finalize(&mut self, prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
 #         Ok(())
@@ -116,29 +107,14 @@ impl LayerExt for Http {
 #     }
 }
 
-let mut pb = PacketParser::new();
-
-// Add a layer binding to `Tcp`
-// if the current layer is Tcp and the destination port is 80,
-// return `Http` as a the next layer to parse
-pb.bind_layer(|tcp: &Tcp, _rest| {
-    if tcp.dport == 80 {
-        Some(Http::parse_layer)
-    } else {
-        None
-    }
-});
+let parser = Parser::new()
+    .bind::<Tcp, Http>(|tcp, _rest| tcp.dport == 80);
 
 // Ether / IP / TCP / "GET /example HTTP/1.1"
 let test_data = hex!("ffffffffffff0000000000000800450000330001000040067cc27f0000017f00000100140050000000000000000050022000ffa20000474554202f6578616d706c6520485454502f312e31");
-let (_rest, packet) = pb.parse_packet::<Ether>(&test_data).unwrap();
+let packet = parser.parse::<Ether>(&test_data).unwrap();
 
-let layers = packet.layers();
-
-assert!(is_layer!(layers[0], Ether));
-assert!(is_layer!(layers[1], Ipv4));
-assert!(is_layer!(layers[2], Tcp));
-assert!(is_layer!(layers[3], Http));
+assert_eq!("Ether / Ipv4 / Tcp / Http", packet.summary());
 ```
 
 # Interface
@@ -153,20 +129,22 @@ See [here](crate::datalink) for more information.
 ## Example
 
 ```rust,no_run
-use nata::{
-    datalink::{pcap::Pcap, Interface, PacketWrite},
-    layer::{ether::Ether, ip::Ipv4, raw::Raw, tcp::Tcp, LayerExt, LayerOwned},
-    packet::Packet,
-};
+#[cfg(feature = "libpcap")]
+fn main() {
+use nata::{datalink::pcap::Pcap, prelude::*};
 
 // Read from interface using libpcap
-let int = Interface::init::<Pcap>("lo").unwrap();
+let mut int = Pcap::open("lo").unwrap();
 
 let (mut rx, mut _tx) = int.into_split();
 
-for (_i, pkt) in (&mut rx).enumerate() {
-    println!("Packet: {:?}", pkt);
+for pkt in rx.try_iter() {
+    println!("Packet: {:?}", pkt.unwrap());
 }
+}
+
+#[cfg(not(feature = "libpcap"))]
+fn main() {}
 ```
 
 */
@@ -181,6 +159,36 @@ extern crate std;
 
 pub mod layer;
 pub mod packet;
+
+/// Parse an Ethernet packet using the built-in layer bindings.
+pub fn parse(input: &[u8]) -> Result<packet::Packet, packet::PacketError> {
+    packet::PacketParser::new().parse::<layer::ether::Ether>(input)
+}
+
+/// Parse an Ethernet packet, returning any unparsed trailing bytes.
+pub fn parse_partial(input: &[u8]) -> Result<(&[u8], packet::Packet), packet::PacketError> {
+    packet::PacketParser::new().parse_partial::<layer::ether::Ether>(input)
+}
+
+/// Convenient imports for packet construction, parsing, inspection, and I/O.
+pub mod prelude {
+    pub use crate::layer::{
+        ether::{Ether, EtherType, MacAddress},
+        icmp::{Icmp4, IcmpType},
+        ip::{IpProtocol, Ipv4, Ipv6},
+        raw::Raw,
+        tcp::{Tcp, TcpFlags, TcpOption},
+        udp::Udp,
+        IntoLayer, LayerOwned, PacketLayer,
+    };
+    pub use crate::packet::{
+        IntoPacket, Packet, PacketBuilder, PacketError, PacketParser, PacketRef, Parser,
+    };
+    pub use crate::{parse, parse_partial};
+
+    #[cfg(feature = "std")]
+    pub use crate::datalink::{PacketRead, PacketReadExt, PacketWrite};
+}
 
 #[cfg(feature = "std")]
 pub mod datalink;

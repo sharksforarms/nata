@@ -8,23 +8,29 @@ Some interface types are enabled via crate features.
 | Type | Feature | Description
 |-----------|------------------|------------
 | [Pnet] | default | Use [libpnet] cross-platform abstraction over a network interface
-| [Pcap] | libpcap | Use libpcap for I/O on a network interface
+| `Pcap` | libpcap | Use libpcap for I/O on a network interface
 
 [Pnet]: crate::datalink::pnet::Pnet
-[Pcap]: crate::datalink::pcap::Pcap
 [libpnet]: https://github.com/libpnet/libpnet
 
 # Example
 
+The backend-specific `open` helpers are the easiest entry points. The
+fallible iterator preserves capture and parse errors:
+
 ```rust,ignore
-let interface = Interface::init::<Pnet>("lo").unwrap();
+use nata::datalink::{pcap::Pcap, PacketReadExt};
 
-let (mut rx, mut tx) = int.into_split();
+let mut interface = Pcap::open("lo").unwrap();
+let (mut reader, _writer) = interface.into_split();
 
-for (_i, pkt) in (&mut rx).enumerate() {
-println!("Packet: {:?}", pkt);
+for packet in reader.try_iter() {
+    println!("Packet: {:?}", packet.unwrap());
 }
 ```
+
+`Interface::init` remains available when selecting a backend through the
+generic `PacketInterface` abstraction.
 */
 
 #[cfg(feature = "libpcap")]
@@ -185,28 +191,61 @@ pub trait PacketInterfaceWrite {
 
 /// Packet read on an interface
 pub trait PacketRead {
-    /// Read packet
+    /// Read one packet.
+    ///
+    /// Implementations use [`DataLinkError::Eof`] to signal a normal end of a
+    /// finite source such as a PCAP file.
     fn read(&mut self) -> Result<Packet, DataLinkError>;
+
+    /// Read the next packet, treating end-of-file as a normal end of stream.
+    fn next_packet(&mut self) -> Result<Option<Packet>, DataLinkError> {
+        match self.read() {
+            Ok(packet) => Ok(Some(packet)),
+            Err(DataLinkError::Eof) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// Extension methods for fallible packet iteration.
+pub trait PacketReadExt: PacketRead {
+    /// Iterate over packets while preserving read and parse errors.
+    fn try_iter(&mut self) -> impl Iterator<Item = Result<Packet, DataLinkError>> + '_
+    where
+        Self: Sized,
+    {
+        PacketTryIter { reader: self }
+    }
+}
+
+impl<T: PacketRead + ?Sized> PacketReadExt for T {}
+
+/// A fallible packet iterator backed by a [`PacketRead`] implementation.
+struct PacketTryIter<'a, R: PacketRead + ?Sized> {
+    reader: &'a mut R,
+}
+
+impl<R: PacketRead + ?Sized> Iterator for PacketTryIter<'_, R> {
+    type Item = Result<Packet, DataLinkError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.reader.next_packet() {
+            Ok(Some(packet)) => Some(Ok(packet)),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        }
+    }
 }
 
 /// Packet write on an interface
 pub trait PacketWrite {
-    /// Write packet
+    /// Write one packet, finalizing it before serialization in the built-in
+    /// backends.
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError>;
-}
 
-/// Unimplemented packet writer
-pub struct UnimplementedWriter;
-impl PacketWrite for UnimplementedWriter {
-    fn write(&mut self, _packet: Packet) -> Result<(), DataLinkError> {
-        unimplemented!()
-    }
-}
-/// Unimplemented packet reader
-pub struct UnimplementedReader;
-impl PacketRead for UnimplementedReader {
-    fn read(&mut self) -> Result<Packet, DataLinkError> {
-        unimplemented!()
+    /// Send a packet.
+    fn send(&mut self, packet: Packet) -> Result<(), DataLinkError> {
+        self.write(packet)
     }
 }
 
@@ -338,30 +377,6 @@ impl<'a, T: PacketWrite> PacketWrite for InterfaceWriterRef<'a, T> {
 impl<T: PacketWrite> PacketWrite for InterfaceWriter<T> {
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
         self.writer.write(packet)
-    }
-}
-
-impl<R: PacketRead, W: PacketWrite> Iterator for Interface<R, W> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
-    }
-}
-
-impl<T: PacketRead> Iterator for InterfaceReaderRef<'_, T> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
-    }
-}
-
-impl<T: PacketRead> Iterator for InterfaceReader<T> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
     }
 }
 
@@ -508,21 +523,64 @@ mod tests {
     }
 
     #[test]
-    fn test_interface_iter() {
+    fn test_interface_try_iter() {
         let mut interface = Interface::init::<DummyInterface>("test").unwrap();
-        assert!(interface.next().is_some());
+        assert!(matches!(interface.try_iter().next(), Some(Ok(_))));
     }
 
     #[test]
-    fn test_interface_reader_iter() {
+    fn test_interface_reader_try_iter() {
         let mut interface = InterfaceReader::init::<DummyInterface>("test").unwrap();
-        assert!(interface.next().is_some());
+        assert!(matches!(interface.try_iter().next(), Some(Ok(_))));
     }
 
     #[test]
-    fn test_interface_reader_ref_iter() {
+    fn test_interface_reader_ref_try_iter() {
         let mut interface = Interface::init::<DummyInterface>("test").unwrap();
         let (mut reader, _writer) = interface.split();
-        assert!(reader.next().is_some());
+        assert!(matches!(reader.try_iter().next(), Some(Ok(_))));
+    }
+
+    struct EofReader {
+        yielded: bool,
+    }
+
+    impl PacketRead for EofReader {
+        fn read(&mut self) -> Result<Packet, DataLinkError> {
+            if self.yielded {
+                Err(DataLinkError::Eof)
+            } else {
+                self.yielded = true;
+                Ok(Packet::new())
+            }
+        }
+    }
+
+    struct ErrorReader;
+
+    impl PacketRead for ErrorReader {
+        fn read(&mut self) -> Result<Packet, DataLinkError> {
+            Err(DataLinkError::BufferError)
+        }
+    }
+
+    #[test]
+    fn test_packet_try_iter_stops_at_eof() {
+        let mut reader = EofReader { yielded: false };
+        let mut packets = reader.try_iter();
+
+        assert!(matches!(packets.next(), Some(Ok(_))));
+        assert!(packets.next().is_none());
+    }
+
+    #[test]
+    fn test_packet_try_iter_preserves_errors() {
+        let mut reader = ErrorReader;
+        let mut packets = reader.try_iter();
+
+        assert!(matches!(
+            packets.next(),
+            Some(Err(DataLinkError::BufferError))
+        ));
     }
 }

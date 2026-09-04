@@ -6,7 +6,7 @@ use alloc::{string::ToString, vec::Vec};
 use crate::layer::{LayerError, LayerOwned};
 
 /// Returns the sum of the length of each layer
-pub fn length_of_layers(layers: &[LayerOwned]) -> Result<usize, LayerError> {
+pub(crate) fn length_of_layers(layers: &[LayerOwned]) -> Result<usize, LayerError> {
     layers.iter().try_fold(0usize, |acc, layer| {
         let len = layer.length()?;
         acc.checked_add(len).ok_or_else(|| {
@@ -16,7 +16,7 @@ pub fn length_of_layers(layers: &[LayerOwned]) -> Result<usize, LayerError> {
 }
 
 /// Returns the data of all layers
-pub fn layers_to_bytes(layers: &[LayerOwned]) -> Result<Vec<u8>, LayerError> {
+pub(crate) fn layers_to_bytes(layers: &[LayerOwned]) -> Result<Vec<u8>, LayerError> {
     layers.iter().try_fold(Vec::new(), |mut acc, layer| {
         let data = layer.to_bytes()?;
         acc.extend(data);

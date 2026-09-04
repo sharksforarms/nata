@@ -5,7 +5,7 @@
 Ethernet layer
 */
 
-use crate::layer::{Layer, LayerExt};
+use crate::layer::PacketLayer;
 use alloc::vec::Vec;
 use deku::prelude::*;
 
@@ -51,8 +51,39 @@ pub struct Ether {
     pub ether_type: EtherType,
 }
 
-impl Layer for Ether {}
-impl LayerExt for Ether {
+impl Ether {
+    /// Construct an Ethernet II header for an IPv4 payload.
+    ///
+    /// The arguments are ordered as source address, destination address to
+    /// match the usual packet-building call pattern.
+    pub fn new(src: MacAddress, dst: MacAddress) -> Self {
+        Self {
+            src,
+            dst,
+            ether_type: EtherType::IPv4,
+        }
+    }
+
+    /// Set the source MAC address.
+    pub fn src(mut self, src: MacAddress) -> Self {
+        self.src = src;
+        self
+    }
+
+    /// Set the destination MAC address.
+    pub fn dst(mut self, dst: MacAddress) -> Self {
+        self.dst = dst;
+        self
+    }
+
+    /// Set the Ethernet payload type.
+    pub fn ether_type(mut self, ether_type: EtherType) -> Self {
+        self.ether_type = ether_type;
+        self
+    }
+}
+
+impl PacketLayer for Ether {
     fn finalize(&mut self, _prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
         // TODO: Maybe update the type based on the next layer?
         Ok(())
@@ -90,7 +121,7 @@ mod tests {
         let ret_read = Ether::try_from(input).unwrap();
         assert_eq!(expected, ret_read);
 
-        let ret_write = LayerExt::to_bytes(&ret_read).unwrap();
+        let ret_write = PacketLayer::to_bytes(&ret_read).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 

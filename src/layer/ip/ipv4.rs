@@ -1,11 +1,11 @@
 /*!
   Ipv4
 */
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 
 use super::IpProtocol;
 use alloc::{string::ToString, vec, vec::Vec};
-use core::convert::TryFrom;
+use core::{convert::TryFrom, net::Ipv4Addr};
 use deku::prelude::*;
 
 /// Ipv4 option class
@@ -137,9 +137,42 @@ pub struct Ipv4 {
 }
 
 impl Ipv4 {
+    /// Construct an IPv4 header with the supplied addresses and packet-safe
+    /// defaults for crafting.
+    pub fn new(src: Ipv4Addr, dst: Ipv4Addr) -> Self {
+        Self {
+            src: u32::from(src),
+            dst: u32::from(dst),
+            ttl: 64,
+            ..Self::default()
+        }
+    }
+
+    /// Return the source address as an [`Ipv4Addr`].
+    pub fn src_addr(&self) -> Ipv4Addr {
+        Ipv4Addr::from(self.src)
+    }
+
+    /// Return the destination address as an [`Ipv4Addr`].
+    pub fn dst_addr(&self) -> Ipv4Addr {
+        Ipv4Addr::from(self.dst)
+    }
+
+    /// Set the time-to-live field.
+    pub fn ttl(mut self, ttl: u8) -> Self {
+        self.ttl = ttl;
+        self
+    }
+
+    /// Set the payload protocol field.
+    pub fn protocol(mut self, protocol: IpProtocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
+
     /// Update the checksum field
     pub fn update_checksum(&mut self) -> Result<(), LayerError> {
-        let mut ipv4 = LayerExt::to_bytes(self)?;
+        let mut ipv4 = PacketLayer::to_bytes(self)?;
 
         // Bytes 10, 11 are the checksum. Clear them and re-calculate.
         ipv4[10] = 0x00;
@@ -172,8 +205,7 @@ impl Default for Ipv4 {
     }
 }
 
-impl Layer for Ipv4 {}
-impl LayerExt for Ipv4 {
+impl PacketLayer for Ipv4 {
     fn finalize(&mut self, _prev: &[LayerOwned], next: &[LayerOwned]) -> Result<(), LayerError> {
         self.length = u16::try_from(
             self.length()?
@@ -210,7 +242,7 @@ impl LayerExt for Ipv4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer::{Layer, LayerError, LayerExt};
+    use crate::layer::{LayerError, PacketLayer};
     use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
@@ -225,12 +257,11 @@ mod tests {
                 fn new() -> Self {
                     Self {}
                 }
-                fn boxed() -> Box<dyn LayerExt> {
+                fn boxed() -> Box<dyn PacketLayer> {
                     Box::new(Self {})
                 }
             }
-            impl Layer for $name {}
-            impl LayerExt for $name {
+            impl PacketLayer for $name {
                 fn finalize(
                     &mut self,
                     _prev: &[LayerOwned],
@@ -307,7 +338,7 @@ mod tests {
         let ret_read = Ipv4::try_from(input).unwrap();
         assert_eq!(expected, ret_read);
 
-        let ret_write = LayerExt::to_bytes(&ret_read).unwrap();
+        let ret_write = PacketLayer::to_bytes(&ret_read).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 

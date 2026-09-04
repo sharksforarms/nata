@@ -2,7 +2,7 @@
 ICMP layer
 */
 
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 use alloc::vec::Vec;
 use deku::prelude::*;
 
@@ -53,11 +53,48 @@ impl Default for Icmp4 {
     }
 }
 
-impl Layer for Icmp4 {}
-impl LayerExt for Icmp4 {
+impl Icmp4 {
+    /// Construct an ICMPv4 message of the supplied type.
+    pub fn new(icmp_type: IcmpType) -> Self {
+        Self {
+            icmp_type,
+            ..Self::default()
+        }
+    }
+
+    /// Construct an ICMPv4 echo request.
+    pub fn echo_request(message: u32, data: impl AsRef<[u8]>) -> Self {
+        Self {
+            icmp_type: IcmpType::EchoRequest,
+            message,
+            data: data.as_ref().to_vec(),
+            ..Self::default()
+        }
+    }
+
+    /// Set the ICMP code.
+    pub fn code(mut self, code: u8) -> Self {
+        self.code = code;
+        self
+    }
+
+    /// Set the ICMP message field.
+    pub fn message(mut self, message: u32) -> Self {
+        self.message = message;
+        self
+    }
+
+    /// Set the ICMP data field.
+    pub fn data(mut self, data: impl AsRef<[u8]>) -> Self {
+        self.data = data.as_ref().to_vec();
+        self
+    }
+}
+
+impl PacketLayer for Icmp4 {
     fn finalize(&mut self, _prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
         let icmp_header = {
-            let mut data = LayerExt::to_bytes(self)?;
+            let mut data = PacketLayer::to_bytes(self)?;
 
             // Clear checksum bytes for calculation
             data[2] = 0x00;
@@ -108,7 +145,7 @@ mod tests {
         let ret_read = Icmp4::try_from(input).unwrap();
         assert_eq!(expected, ret_read);
 
-        let ret_write = LayerExt::to_bytes(&ret_read).unwrap();
+        let ret_write = PacketLayer::to_bytes(&ret_read).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 
