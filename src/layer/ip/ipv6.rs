@@ -6,7 +6,7 @@
 
 use super::IpProtocol;
 use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
-use alloc::{format, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 use core::convert::TryFrom;
 use deku::prelude::*;
 

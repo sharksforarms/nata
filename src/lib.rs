@@ -1,25 +1,25 @@
 /*!
-Hatchet is a network packet manipulation toolkit.
+Nata is a network packet manipulation toolkit.
 
 This library takes inspiration from Python's [Scapy](https://scapy.net/).
 
-Hatchet enables extensible parsing and crafting of network packets.
+Nata enables extensible parsing and crafting of network packets.
 
 # Layer
 
 A Layer represents the layout structure of a specific protocol (such as [Tcp](crate::layer::tcp::Tcp)).
 
-Hatchet has [layer implementations](./layer/trait.LayerExt.html#implementors) for many core network protocols.
+Nata has [layer implementations](./layer/trait.LayerExt.html#implementors) for many core network protocols.
 
-For custom protocols or those implemented in hatchet already, see [layer](crate::layer) for examples on adding a new layer.
+For custom protocols or those implemented in nata already, see [layer](crate::layer) for examples on adding a new layer.
 
-If you think a protocol should be included by default in hatchet, consider contributing! See [here](https://github.com/sharksforarms/hatchet) for more information.
+If you think a protocol should be included by default in nata, consider contributing! See [here](https://github.com/sharksforarms/nata) for more information.
 
 ## Example
 
 ```rust
-use hatchet::layer::LayerExt;
-use hatchet::layer::ether::{Ether, EtherType, MacAddress};
+use nata::layer::LayerExt;
+use nata::layer::ether::{Ether, EtherType, MacAddress};
 # use hexlit::hex;
 
 let data: &[u8] = &hex!("feff200001000000010000000800");
@@ -48,8 +48,8 @@ A [Packet](crate::packet::Packet) is defined as a collection of
 
 ```rust
 
-use hatchet::packet::Packet;
-use hatchet::layer::{
+use nata::packet::Packet;
+use nata::layer::{
     LayerExt,
     LayerOwned,
     ether::Ether,
@@ -77,20 +77,20 @@ packet.finalize().unwrap();
 The packet parser defines the heuristics on which layer to parse next, given the current layer and
 the remaining bytes.
 
-Hatchet provides default layer bindings for layers it implements. These can be found [here](crate::packet::bindings).
+Nata provides default layer bindings for layers it implements. These can be found [here](crate::packet::bindings).
 
 ```rust
-use hatchet::packet::PacketParser;
-use hatchet::layer::{
+use nata::packet::PacketParser;
+use nata::layer::{
     Layer,
     LayerExt,
     ether::Ether,
     ip::ipv4::Ipv4,
     tcp::Tcp,
 };
-use hatchet::is_layer;
+use nata::is_layer;
 # use hexlit::hex;
-# use hatchet::layer::{LayerOwned, LayerError};
+# use nata::layer::{LayerOwned, LayerError};
 
 // My custom Http layer
 #[derive(Debug, Clone)]
@@ -153,7 +153,7 @@ See [here](crate::datalink) for more information.
 ## Example
 
 ```rust,no_run
-use hatchet::{
+use nata::{
     datalink::{pcap::Pcap, Interface, PacketWrite},
     layer::{ether::Ether, ip::Ipv4, raw::Raw, tcp::Tcp, LayerExt, LayerOwned},
     packet::Packet,

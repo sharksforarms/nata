@@ -1,0 +1,26 @@
+name: nata
+
+services:
+  build:
+    image: ${NATA_IMAGE:-nata-build:latest}
+    build:
+      context: .
+      args:
+        STABLE_TOOLCHAIN: ${NATA_STABLE_TOOLCHAIN:-stable}
+        MSRV_TOOLCHAIN: ${NATA_MSRV_TOOLCHAIN:-1.88.0}
+        BETA_TOOLCHAIN: ${NATA_BETA_TOOLCHAIN:-beta}
+        USER_UID: ${NATA_USER_UID:-1000}
+        USER_GID: ${NATA_USER_GID:-1000}
+    init: true
+    environment:
+      NATA_TOOLCHAIN: ${NATA_TOOLCHAIN:-stable}
+    volumes:
+      - .:/workspace
+      - cargo-registry:/home/nata/.cargo/registry
+      - cargo-git:/home/nata/.cargo/git
+      - cargo-target:/workspace/target
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:

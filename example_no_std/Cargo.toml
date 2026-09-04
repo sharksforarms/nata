@@ -1,0 +1,30 @@
+[package]
+name = "example_no_std"
+version = "0.1.0"
+authors = ["sharks <sharks@sharks>"]
+edition = "2021"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[workspace]
+
+[lib]
+name = "example_no_std"
+path = "src/lib.rs"
+
+[[bin]]
+name = "example_no_std"
+path = "src/main.rs"
+
+[dependencies]
+nata = { path = "../", default-features = false }
+
+[target.'cfg(target_os = "none")'.dependencies]
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.5"
+embedded-alloc = "0.6.0"

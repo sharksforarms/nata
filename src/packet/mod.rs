@@ -29,7 +29,7 @@ impl<'a> PacketView<'a> {
 }
 
 /// A packet is simply a collection of [Layer](crate::layer::LayerExt)
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Packet {
     layers: Vec<LayerOwned>,
 }
@@ -76,12 +76,6 @@ impl Packet {
     }
 }
 
-impl Default for Packet {
-    fn default() -> Self {
-        Self { layers: Vec::new() }
-    }
-}
-
 type LayerBinding = Box<
     dyn Fn(
         &dyn LayerExt,
@@ -125,7 +119,7 @@ impl PacketParser {
     # Example
 
     ```rust
-    # use hatchet::{
+    # use nata::{
     #   is_layer, get_layer,
     #   packet::PacketParser,
     #   layer::{Layer, LayerExt, LayerOwned, LayerError}
@@ -205,7 +199,7 @@ impl PacketParser {
                 -> Option<fn(&[u8]) -> Result<(&[u8], Box<dyn LayerExt>), crate::layer::LayerError>>,
     {
         let tid = TypeId::of::<LayerType>();
-        let bindings = self.layer_bindings.entry(tid).or_insert_with(Vec::new);
+        let bindings = self.layer_bindings.entry(tid).or_default();
         (*bindings).push(Box::new(
             move |current_layer: &dyn LayerExt, rest: &[u8]| -> _ {
                 // SAFETY: This callback is only to be called if the layer type is `LayerType` therefor we

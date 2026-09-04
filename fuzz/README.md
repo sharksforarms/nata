@@ -1,5 +1,15 @@
 # Fuzzing
 
+Install nightly Rust and `cargo-fuzz`, then run a target from the repository root:
+
+```sh
+just fuzz
+just fuzz fuzz_ipv4
+just fuzz fuzz_tcp 60
+```
+
+The default target is `fuzz_tcp`; an optional duration limits a run in seconds.
+
 ## Coverage
 
 Example to retrieve coverage

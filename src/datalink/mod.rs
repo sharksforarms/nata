@@ -8,13 +8,11 @@ Some interface types are enabled via crate features.
 | Type | Feature | Description
 |-----------|------------------|------------
 | [Pnet] | default | Use [libpnet] cross-platform abstraction over a network interface
-| [Pnet] | netmap | Enable [netmap] feature in libpnet to utilize netmap for I/O
-| [Pcap] | pcap | Use libpcap for I/O on a network interface
+| [Pcap] | libpcap | Use libpcap for I/O on a network interface
 
 [Pnet]: crate::datalink::pnet::Pnet
 [Pcap]: crate::datalink::pcap::Pcap
 [libpnet]: https://github.com/libpnet/libpnet
-[netmap]: http://info.iet.unipi.it/~luigi/netmap/
 
 # Example
 
@@ -29,7 +27,7 @@ println!("Packet: {:?}", pkt);
 ```
 */
 
-#[cfg(feature = "pcap")]
+#[cfg(feature = "libpcap")]
 pub mod pcap;
 
 #[cfg(feature = "std")]
@@ -347,12 +345,7 @@ impl<R: PacketRead, W: PacketWrite> Iterator for Interface<R, W> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 
@@ -360,12 +353,7 @@ impl<T: PacketRead> Iterator for InterfaceReaderRef<'_, T> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 
@@ -373,12 +361,7 @@ impl<T: PacketRead> Iterator for InterfaceReader<T> {
     type Item = Packet;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let packet = self.reader.read();
-        if let Ok(packet) = packet {
-            Some(packet)
-        } else {
-            None
-        }
+        self.reader.read().ok()
     }
 }
 

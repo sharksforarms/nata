@@ -22,7 +22,7 @@ UDP Header
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 */
-#[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
+#[derive(Debug, Default, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(endian = "big")]
 pub struct Udp {
     /// Source Port
@@ -33,17 +33,6 @@ pub struct Udp {
     pub length: u16,
     /// Checksum
     pub checksum: u16,
-}
-
-impl Default for Udp {
-    fn default() -> Self {
-        Udp {
-            sport: 0,
-            dport: 0,
-            length: 0,
-            checksum: 0,
-        }
-    }
 }
 
 /// Ipv6 pseudo header used in udp checksum calculation
@@ -177,6 +166,7 @@ impl LayerExt for Udp {
 mod tests {
     use super::*;
     use crate::layer::ip::{Ipv4, Ipv6};
+    use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
     use std::convert::TryFrom;

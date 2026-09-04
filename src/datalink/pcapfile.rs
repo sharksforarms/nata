@@ -1,9 +1,5 @@
 /*!
-Packet interface implementation using `libpcap` to read pcap files
-
-Note: Pcap writing currently not supported
-
-libpcap interface exposed via libpnet
+Packet interface for reading and writing PCAP files.
 */
 use crate::{
     datalink::{
@@ -14,8 +10,9 @@ use crate::{
     packet::{Packet, PacketError, PacketParser},
 };
 use core::convert::TryFrom;
-use pcap_file::{pcap::PcapReader, PcapWriter};
+use pcap_file::pcap::{PcapPacket, PcapReader, PcapWriter};
 use std::fs::File;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Pcap file based interface
 pub struct PcapFile {}
@@ -56,7 +53,7 @@ impl PacketInterfaceRead for PcapFile {
         let reader = PcapReader::new(file_in)?;
 
         // Initialize the parser based on the pcap header
-        let parser_fn = match reader.header.datalink {
+        let parser_fn = match reader.header().datalink {
             pcap_file::DataLink::ETHERNET => {
                 let pfn: PcapParserFn = Box::new(
                     |packet_parser: &PacketParser,
@@ -111,7 +108,7 @@ impl PacketInterfaceWrite for PcapFile {
 
 impl PacketRead for PcapFileReader {
     fn read(&mut self) -> Result<Packet, DataLinkError> {
-        match self.reader.next() {
+        match self.reader.next_packet() {
             Some(Ok(packet)) => {
                 let (_rest, packet) = (self.parser_fn)(&self.packet_parser, &packet.data)?;
                 // TODO: log warning of un-read data?
@@ -134,17 +131,14 @@ impl PacketWrite for PcapFileWriter {
             ))
         })?;
 
-        let ts = chrono::offset::Utc::now();
-        let ts_sec = u32::try_from(ts.timestamp()).map_err(|_e| {
-            DataLinkError::PcapError(format!(
-                "failed to convert timestamp {} > {}",
-                ts.timestamp(),
-                u32::MAX
-            ))
-        })?;
-        let ts_nsec = ts.timestamp_subsec_nanos();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| {
+                DataLinkError::PcapError(format!("system clock is before Unix epoch: {error}"))
+            })?;
+        let pcap_packet = PcapPacket::new(timestamp, data_len, &data);
 
-        match self.writer.write(ts_sec, ts_nsec, &data, data_len) {
+        match self.writer.write_packet(&pcap_packet) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }

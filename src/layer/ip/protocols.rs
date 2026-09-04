@@ -1,14 +1,13 @@
 /*!
   IP protocols
 */
-use alloc::{format, vec::Vec};
 use deku::prelude::*;
 
 /// Ip Protocols
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, PartialEq, Clone, Copy, DekuRead, DekuWrite)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, DekuRead, DekuWrite)]
 #[deku(
-    type = "u8",
+    id_type = "u8",
     ctx = "endian: deku::ctx::Endian",
     ctx_default = "deku::ctx::Endian::Big",
     endian = "endian"
@@ -35,6 +34,7 @@ pub enum IpProtocol {
     ST,
     /// transmission control protocol
     #[deku(id = "6")]
+    #[default]
     TCP,
     /// exterior gateway protocol
     #[deku(id = "8")]
@@ -180,12 +180,6 @@ pub enum IpProtocol {
     /// Unknown ip protocol
     #[deku(id_pat = "_")]
     Unknown(u8),
-}
-
-impl Default for IpProtocol {
-    fn default() -> Self {
-        IpProtocol::TCP
-    }
 }
 
 #[cfg(test)]

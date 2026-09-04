@@ -1,10 +1,10 @@
-use hatchet::layer::ether::Ether;
-use hatchet::layer::ip::Ipv4;
-use hatchet::layer::tcp::Tcp;
-use hatchet::layer::LayerError;
-use hatchet::layer::{Layer, LayerExt, LayerOwned};
-use hatchet::packet::PacketParser;
 use hexlit::hex;
+use nata::layer::ether::Ether;
+use nata::layer::ip::Ipv4;
+use nata::layer::tcp::Tcp;
+use nata::layer::LayerError;
+use nata::layer::{Layer, LayerExt, LayerOwned};
+use nata::packet::PacketParser;
 
 #[derive(Debug, Default, Clone)]
 struct Http {
@@ -28,7 +28,7 @@ impl LayerExt for Http {
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, LayerError> {
-        todo!()
+        Ok(self.data.as_bytes().to_vec())
     }
 }
 

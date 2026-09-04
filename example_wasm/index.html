@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nata PCAP viewer</title>
+  </head>
+  <body>
+    <h1>Nata PCAP viewer</h1>
+    <p>Load a legacy <code>.pcap</code> capture to decode it with Nata.</p>
+
+    <form id="url-form">
+      <label for="url">PCAP URL:</label>
+      <input id="url" type="url" required>
+      <button type="submit">Load URL</button>
+    </form>
+
+    <p>Or choose a local file:</p>
+    <input id="file" type="file" accept=".pcap">
+
+    <p id="status">Loading WebAssembly...</p>
+    <pre id="output">Choose a capture to inspect.</pre>
+
+    <script type="module">
+      import init, { read_packets } from './pkg/example_wasm.js';
+
+      const urlForm = document.querySelector('#url-form');
+      const urlInput = document.querySelector('#url');
+      const fileInput = document.querySelector('#file');
+      const status = document.querySelector('#status');
+      const output = document.querySelector('#output');
+      const wasmReady = init();
+
+      function errorMessage(error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+
+      async function parse(bytes, source) {
+        status.textContent = `Parsing ${source}...`;
+
+        try {
+          await wasmReady;
+          output.textContent = read_packets(bytes);
+          status.textContent = `Parsed ${source}.`;
+        } catch (error) {
+          status.textContent = `Could not parse ${source}.`;
+          output.textContent = errorMessage(error);
+        }
+      }
+
+      wasmReady.then(() => {
+        status.textContent = 'Ready.';
+      }).catch((error) => {
+        status.textContent = 'WebAssembly failed to initialize.';
+        output.textContent = errorMessage(error);
+      });
+
+      urlForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const url = urlInput.value.trim();
+
+        try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+          await parse(new Uint8Array(await response.arrayBuffer()), url);
+        } catch (error) {
+          status.textContent = `Could not load ${url}.`;
+          output.textContent = errorMessage(error);
+        }
+      });
+
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        if (file) await parse(new Uint8Array(await file.arrayBuffer()), file.name);
+        fileInput.value = '';
+      });
+    </script>
+  </body>
+</html>

@@ -4,16 +4,14 @@
 use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
 
 use super::IpProtocol;
-use alloc::string::ToString;
-use alloc::{format, vec, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 use core::convert::TryFrom;
-use deku::bitvec::{BitSlice, Msb0};
 use deku::prelude::*;
 
 /// Ipv4 option class
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(
-    type = "u8",
+    id_type = "u8",
     bits = "2",
     ctx = "endian: deku::ctx::Endian",
     endian = "endian"
@@ -34,7 +32,7 @@ pub enum Ipv4OptionClass {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, Clone, DekuRead, DekuWrite)]
 #[deku(
-    type = "u8",
+    id_type = "u8",
     bits = "5",
     ctx = "endian: deku::ctx::Endian",
     endian = "endian"
@@ -50,18 +48,17 @@ pub enum Ipv4OptionType {
     #[deku(id_pat = "_")]
     Unknown {
         /// option type
-        #[deku(bits = "5")]
         type_: u8,
         /// option length
         #[deku(update = "{u8::try_from(
             value.len()
             .checked_add(2)
-            .ok_or_else(|| DekuError::Parse(\"overflow when updating ipv4 option length\".to_string()))?
+            .ok_or_else(|| DekuError::Parse(\"overflow when updating ipv4 option length\".into()))?
         )?}")]
         length: u8,
         /// option value
         #[deku(
-            count = "length.checked_sub(2).ok_or_else(|| DekuError::Parse(\"overflow when parsing ipv4 option\".to_string()))?"
+            count = "length.checked_sub(2).ok_or_else(|| DekuError::Parse(\"overflow when parsing ipv4 option\".into()))?"
         )]
         value: Vec<u8>,
     },
@@ -135,47 +132,11 @@ pub struct Ipv4 {
     /// Destination IP Address
     pub dst: u32,
     /// List of ipv4 options
-    #[deku(reader = "Ipv4::read_options(*ihl, deku::rest)")]
+    #[deku(bytes_read = "ihl.saturating_sub(5) * 4")]
     pub options: Vec<Ipv4Option>,
 }
 
 impl Ipv4 {
-    /// Read all ipv4 options
-    fn read_options(
-        ihl: u8, // number of 32 bit words
-        rest: &BitSlice<Msb0, u8>,
-    ) -> Result<(&BitSlice<Msb0, u8>, Vec<Ipv4Option>), DekuError> {
-        if ihl > 5 {
-            // we have options to parse
-
-            // slice off length of options
-            let bits = (ihl as usize - 5) * 32;
-
-            // Check split_at precondition
-            if bits > rest.len() {
-                return Err(DekuError::Parse(
-                    "not enough data to read ipv4 options".to_string(),
-                ));
-            }
-
-            let (mut option_rest, rest) = rest.split_at(bits);
-
-            let mut ipv4_options = Vec::with_capacity(1); // at-least 1
-            while !option_rest.is_empty() {
-                let (option_rest_new, tcp_option) =
-                    Ipv4Option::read(option_rest, deku::ctx::Endian::Big)?;
-
-                ipv4_options.push(tcp_option);
-
-                option_rest = option_rest_new;
-            }
-
-            Ok((rest, ipv4_options))
-        } else {
-            Ok((rest, vec![]))
-        }
-    }
-
     /// Update the checksum field
     pub fn update_checksum(&mut self) -> Result<(), LayerError> {
         let mut ipv4 = LayerExt::to_bytes(self)?;

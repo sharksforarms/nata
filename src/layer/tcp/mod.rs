@@ -4,15 +4,14 @@ TCP layer
 use crate::get_layer;
 use crate::layer::ip::{IpProtocol, Ipv4, Ipv6};
 use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
-use alloc::{format, string::ToString, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 use core::convert::TryFrom;
-use deku::bitvec::{BitSlice, Msb0};
 use deku::prelude::*;
 
 mod options;
 pub use options::{SAckData, TcpOption, TimestampData};
 
-#[derive(Debug, Clone, PartialEq, DekuRead, DekuWrite)]
+#[derive(Debug, Default, Clone, PartialEq, DekuRead, DekuWrite)]
 #[deku(
     endian = "endian",
     ctx = "endian: deku::ctx::Endian",
@@ -42,23 +41,6 @@ pub struct TcpFlags {
     pub syn: u8,
     #[deku(bits = "1")]
     pub fin: u8,
-}
-
-impl Default for TcpFlags {
-    fn default() -> Self {
-        TcpFlags {
-            reserved: 0,
-            nonce: 0,
-            crw: 0,
-            ecn: 0,
-            urgent: 0,
-            ack: 0,
-            push: 0,
-            reset: 0,
-            syn: 0,
-            fin: 0,
-        }
-    }
 }
 
 impl core::fmt::Display for TcpFlags {
@@ -115,48 +97,10 @@ pub struct Tcp {
     pub window: u16,
     pub checksum: u16,
     pub urgptr: u16,
-    #[deku(reader = "Tcp::read_options(*offset, deku::rest)")]
+    #[deku(
+        bytes_read = "offset.checked_sub(5).and_then(|value| value.checked_mul(4)).ok_or_else(|| DekuError::Parse(\"error: invalid tcp offset\".into()))?"
+    )]
     pub options: Vec<TcpOption>,
-}
-
-impl Tcp {
-    fn read_options(
-        offset: u8,
-        rest: &BitSlice<Msb0, u8>,
-    ) -> Result<(&BitSlice<Msb0, u8>, Vec<TcpOption>), DekuError> {
-        let length = offset
-            .checked_sub(5)
-            .and_then(|v| v.checked_mul(4))
-            .ok_or_else(|| DekuError::Parse("error: invalid tcp offset".to_string()))?;
-
-        if length == 0 {
-            return Ok((rest, Vec::new()));
-        }
-
-        // slice off length from rest
-        let bits: usize = length as usize * 8;
-
-        // Check split_at precondition
-        if bits > rest.len() {
-            return Err(DekuError::Parse(
-                "not enough data to read tcp options".to_string(),
-            ));
-        }
-
-        let (mut option_rest, rest) = rest.split_at(bits);
-
-        let mut tcp_options = Vec::with_capacity(1); // at-least 1
-        while !option_rest.is_empty() {
-            let (option_rest_new, tcp_option) =
-                TcpOption::read(option_rest, deku::ctx::Endian::Big)?;
-
-            tcp_options.push(tcp_option);
-
-            option_rest = option_rest_new;
-        }
-
-        Ok((rest, tcp_options))
-    }
 }
 
 impl Default for Tcp {
@@ -229,7 +173,7 @@ impl LayerExt for Tcp {
             let data = LayerExt::to_bytes(self)?; // TODO: We could verify options length instead
 
             // align tcp header to 32-bit boundary for offset calculation
-            let pad_amt = 4 * ((data.len() + 3) / 4) - data.len();
+            let pad_amt = 4 * data.len().div_ceil(4) - data.len();
             for _ in 0..pad_amt {
                 self.options.push(TcpOption::EOL);
             }
@@ -416,7 +360,7 @@ mod tests {
             &hex!("0d2c005038affe14114c618c101825bca9580000"),
             Tcp::default(),
         ),
-        #[should_panic(expected = "Parse(\"not enough data to read tcp options\")")]
+        #[should_panic(expected = "Incomplete(NeedSize { bits: 8 })")]
         case(
             &hex!("ffffffffffffffffffffffffffffffffffffffff"),
             Tcp::default(),
