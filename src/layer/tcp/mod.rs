@@ -1,9 +1,8 @@
 /*!
 TCP layer
 */
-use crate::get_layer;
 use crate::layer::ip::{IpProtocol, Ipv4, Ipv6};
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 use alloc::{string::ToString, vec::Vec};
 use core::convert::TryFrom;
 use deku::prelude::*;
@@ -54,6 +53,48 @@ impl core::fmt::Display for TcpFlags {
             if self.fin == 1 { "F" } else { "" },
             if self.reset == 1 { "R" } else { "" },
         )
+    }
+}
+
+impl TcpFlags {
+    /// Construct flags with all bits cleared.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the SYN flag.
+    pub fn syn(mut self) -> Self {
+        self.syn = 1;
+        self
+    }
+
+    /// Set the ACK flag.
+    pub fn ack(mut self) -> Self {
+        self.ack = 1;
+        self
+    }
+
+    /// Set the PSH flag.
+    pub fn push(mut self) -> Self {
+        self.push = 1;
+        self
+    }
+
+    /// Set the FIN flag.
+    pub fn fin(mut self) -> Self {
+        self.fin = 1;
+        self
+    }
+
+    /// Set the RST flag.
+    pub fn reset(mut self) -> Self {
+        self.reset = 1;
+        self
+    }
+
+    /// Construct SYN+ACK flags.
+    pub fn syn_ack() -> Self {
+        Self::new().syn().ack()
     }
 }
 
@@ -120,6 +161,54 @@ impl Default for Tcp {
     }
 }
 
+impl Tcp {
+    /// Construct a TCP header with the supplied ports.
+    pub fn new(sport: u16, dport: u16) -> Self {
+        Self {
+            sport,
+            dport,
+            window: 65_535,
+            ..Self::default()
+        }
+    }
+
+    /// Set the source port.
+    pub fn sport(mut self, sport: u16) -> Self {
+        self.sport = sport;
+        self
+    }
+
+    /// Set the destination port.
+    pub fn dport(mut self, dport: u16) -> Self {
+        self.dport = dport;
+        self
+    }
+
+    /// Set the sequence number.
+    pub fn seq(mut self, seq: u32) -> Self {
+        self.seq = seq;
+        self
+    }
+
+    /// Set the acknowledgment number.
+    pub fn ack(mut self, ack: u32) -> Self {
+        self.ack = ack;
+        self
+    }
+
+    /// Set the TCP flags.
+    pub fn flags(mut self, flags: TcpFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    /// Set the receive window.
+    pub fn window(mut self, window: u16) -> Self {
+        self.window = window;
+        self
+    }
+}
+
 /// Ipv6 pseudo header used in tcp checksum calculation
 #[derive(Debug, PartialEq, Clone, DekuWrite)]
 #[deku(endian = "big")]
@@ -166,11 +255,10 @@ impl Ipv4PseudoHeader {
     }
 }
 
-impl Layer for Tcp {}
-impl LayerExt for Tcp {
+impl PacketLayer for Tcp {
     fn finalize(&mut self, prev: &[LayerOwned], next: &[LayerOwned]) -> Result<(), LayerError> {
         let tcp_header = {
-            let data = LayerExt::to_bytes(self)?; // TODO: We could verify options length instead
+            let data = PacketLayer::to_bytes(self)?; // TODO: We could verify options length instead
 
             // align tcp header to 32-bit boundary for offset calculation
             let pad_amt = 4 * data.len().div_ceil(4) - data.len();
@@ -178,7 +266,7 @@ impl LayerExt for Tcp {
                 self.options.push(TcpOption::EOL);
             }
 
-            let mut data = LayerExt::to_bytes(self)?;
+            let mut data = PacketLayer::to_bytes(self)?;
 
             // Clear checksum bytes for calculation
             data[16] = 0x00;
@@ -202,7 +290,7 @@ impl LayerExt for Tcp {
                     )
                 })?;
 
-            let ip_pseudo_header = if let Some(ipv4) = get_layer!(prev_layer, Ipv4) {
+            let ip_pseudo_header = if let Some(ipv4) = prev_layer.as_any().downcast_ref::<Ipv4>() {
                 Some(
                     Ipv4PseudoHeader::new(
                         ipv4,
@@ -212,7 +300,7 @@ impl LayerExt for Tcp {
                     )
                     .to_bytes()?,
                 )
-            } else if let Some(ipv6) = get_layer!(prev_layer, Ipv6) {
+            } else if let Some(ipv6) = prev_layer.as_any().downcast_ref::<Ipv6>() {
                 Some(
                     Ipv6PseudoHeader::new(
                         ipv6,
@@ -264,7 +352,7 @@ impl LayerExt for Tcp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer::{Layer, LayerError, LayerExt};
+    use crate::layer::{LayerError, PacketLayer};
     use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
@@ -279,12 +367,11 @@ mod tests {
                 fn new() -> Self {
                     Self {}
                 }
-                fn boxed() -> Box<dyn LayerExt> {
+                fn boxed() -> Box<dyn PacketLayer> {
                     Box::new(Self {})
                 }
             }
-            impl Layer for $name {}
-            impl LayerExt for $name {
+            impl PacketLayer for $name {
                 fn finalize(
                     &mut self,
                     _prev: &[LayerOwned],
@@ -370,7 +457,7 @@ mod tests {
         let ret_read = Tcp::try_from(input).unwrap();
         assert_eq!(expected, ret_read);
 
-        let ret_write = LayerExt::to_bytes(&ret_read).unwrap();
+        let ret_write = PacketLayer::to_bytes(&ret_read).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 

@@ -27,15 +27,15 @@ pub fn set_panic_hook() {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-fn parse_packet<'a>(
+fn parse_captured_packet<'a>(
     parser: &PacketParser,
     datalink: DataLink,
     input: &'a [u8],
 ) -> Result<(&'a [u8], Packet), PacketError> {
     if datalink == DataLink::ETHERNET {
-        parser.parse_packet::<Ether>(input)
+        parser.parse_partial::<Ether>(input)
     } else {
-        parser.parse_packet::<Raw>(input)
+        parser.parse_partial::<Raw>(input)
     }
 }
 
@@ -62,8 +62,9 @@ fn read_packets_debug(input: &[u8]) -> Result<String, String> {
             .map_err(|error| format!("Could not read packet {}: {error}", packet_count + 1))?;
         packet_count += 1;
 
-        let (unparsed, packet) = parse_packet(&packet_parser, header.datalink, &captured.data)
-            .map_err(|error| format!("Could not decode packet {packet_count}: {error:?}"))?;
+        let (unparsed, packet) =
+            parse_captured_packet(&packet_parser, header.datalink, &captured.data)
+                .map_err(|error| format!("Could not decode packet {packet_count}: {error:?}"))?;
 
         writeln!(
             &mut output,

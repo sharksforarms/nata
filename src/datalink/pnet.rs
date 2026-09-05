@@ -3,19 +3,16 @@ Packet interface implementation using `libpnet`
 */
 use pnet::datalink::{self, Channel, DataLinkReceiver, DataLinkSender, NetworkInterface};
 
-use super::{DataLinkError, PacketInterface, PacketRead, PacketWrite};
+use super::{BackendInterface, DataLinkError, PacketInterface, PacketRead, PacketWrite};
 use crate::{
-    datalink::{Interface, InterfaceMetadata},
+    datalink::InterfaceMetadata,
     layer::ether::{Ether, MacAddress},
     packet::{Packet, PacketParser},
 };
 use alloc::boxed::Box;
 
 /// Pnet network interface
-pub struct Pnet {
-    reader: PnetReader,
-    writer: PnetWriter,
-}
+pub struct Pnet;
 
 /// Pnet reader
 pub struct PnetReader {
@@ -32,14 +29,16 @@ impl PacketInterface for Pnet {
     type Reader = PnetReader;
     type Writer = PnetWriter;
 
-    fn init(interface_name: &str) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError> {
+    fn init(
+        interface_name: &str,
+    ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError> {
         Self::init_with_parser(interface_name, PacketParser::new())
     }
 
     fn init_with_parser(
         interface_name: &str,
         packet_parser: PacketParser,
-    ) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError> {
+    ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError> {
         let interface_names_match = |iface: &NetworkInterface| iface.name == interface_name;
 
         // Find the network interface with the provided name
@@ -55,7 +54,7 @@ impl PacketInterface for Pnet {
             Err(e) => Err(DataLinkError::IoError(e)),
         }?;
 
-        Ok(Interface {
+        Ok(BackendInterface {
             reader: PnetReader {
                 packet_parser,
                 reader: rx,
@@ -68,17 +67,11 @@ impl PacketInterface for Pnet {
     }
 }
 
-impl PacketRead for Pnet {
-    fn read(&mut self) -> Result<Packet, DataLinkError> {
-        self.reader.read()
-    }
-}
-
 impl PacketRead for PnetReader {
     fn read(&mut self) -> Result<Packet, DataLinkError> {
         match self.reader.next() {
             Ok(packet_bytes) => {
-                let (_rest, packet) = self.packet_parser.parse_packet::<Ether>(packet_bytes)?;
+                let (_rest, packet) = self.packet_parser.parse_partial::<Ether>(packet_bytes)?;
                 // TODO: log warning of un-read data?
                 Ok(packet)
             }
@@ -87,15 +80,9 @@ impl PacketRead for PnetReader {
     }
 }
 
-impl PacketWrite for Pnet {
-    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
-        self.writer.write(packet)
-    }
-}
-
 impl PacketWrite for PnetWriter {
-    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
-        let bytes = packet.to_bytes()?;
+    fn write(&mut self, mut packet: Packet) -> Result<(), DataLinkError> {
+        let bytes = packet.bytes()?;
         if let Some(res) = self.writer.send_to(bytes.as_ref(), None) {
             Ok(res?)
         } else {

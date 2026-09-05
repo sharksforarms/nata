@@ -1,28 +1,23 @@
-use nata::{
-    datalink::{pcap::Pcap, Interface, PacketWrite},
-    layer::{ether::Ether, ip::Ipv4, raw::Raw, tcp::Tcp, LayerExt, LayerOwned},
-    packet::Packet,
-};
+use nata::{datalink::Interface, prelude::*};
 
 fn main() {
     // Read from interface
-    let int = Interface::init::<Pcap>("lo").unwrap();
+    let mut interface = Interface::open("lo").unwrap();
 
-    let (mut rx, mut tx) = int.into_split();
-    //let (mut rx, mut tx) = int.split();
+    let (mut rx, mut tx) = interface.split();
 
-    for pkt in &mut rx {
-        println!("Packet: {:?}", pkt);
+    for pkt in rx.try_iter() {
+        let pkt = pkt.unwrap();
+        println!("Packet: {pkt:?}");
 
         // send a hello world for every packet
-        let layers: Vec<LayerOwned> = vec![
-            Box::new(Ether::default()),
-            Box::new(Ipv4::default()),
-            Box::new(Tcp::default()),
-            Box::new(Raw::parse(b"hello world").unwrap().1),
-        ];
-        let mut p = Packet::from_layers(layers);
-        p.finalize().unwrap();
-        tx.write(p).unwrap();
+        let p = Packet::builder()
+            .layer(Ether::default())
+            .layer(Ipv4::default())
+            .layer(Tcp::default())
+            .payload(b"hello world")
+            .build()
+            .unwrap();
+        tx.send(p).unwrap();
     }
 }

@@ -8,7 +8,7 @@ Documentation only module, listing the default layer bindings for [PacketParser]
 | Layer | Condition | Next Layer
 |-----------|------------------|------------
 | [Ether] | type == Ipv4 | [Ipv4]
-| [Ether] | type == Ipv6 | [Ipv4]
+| [Ether] | type == Ipv6 | [Ipv6]
 | [Ipv4] | protocol == Tcp | [Tcp]
 | [Ipv4] | protocol == Udp | [Udp]
 | [Ipv4] | protocol == Icmp | [Icmp4]
@@ -20,7 +20,7 @@ Documentation only module, listing the default layer bindings for [PacketParser]
 [Ipv6]: crate::layer::ip::Ipv6
 [Udp]: crate::layer::udp::Udp
 [Tcp]: crate::layer::tcp::Tcp
-[Icmp]: crate::layer::icmp::Icmp4
+[Icmp4]: crate::layer::icmp::Icmp4
 */
 use crate::{
     layer::{
@@ -30,7 +30,7 @@ use crate::{
         raw::Raw,
         tcp::Tcp,
         udp::Udp,
-        LayerExt,
+        PacketLayer,
     },
     packet::PacketParser,
 };

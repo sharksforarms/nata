@@ -21,7 +21,7 @@ providing strongly typed protocol layers and symmetric binary serialization.
   checksums, and TCP/UDP checksums.
 - Parse complete protocol stacks with built-in layer bindings, or register
   custom bindings for application protocols.
-- Add custom protocols by implementing the `Layer` and `LayerExt` traits.
+- Add custom protocols by implementing the `PacketLayer` trait.
 - Read and write live packets and offline PCAP files.
 - Compile the core packet and layer APIs without `std`.
 
@@ -37,65 +37,63 @@ configuration.
 
 ## Quick start
 
-The example below creates an Ethernet/IPv4/UDP packet containing a raw payload.
-`finalize` fills in the dependent length and checksum fields before the packet
-is serialized. The resulting bytes are then parsed back into the same four
-layers.
+The high-level API creates an Ethernet/IPv4/UDP packet containing a raw
+payload without exposing `Box<dyn ...>` layer storage. `build` finalizes
+dependent length, offset, and checksum fields. `bytes` is also safe to call on
+an unfinished packet and finalizes it first.
 
 ```rust
-use nata::{
-    is_layer,
-    layer::{
-        ether::{Ether, EtherType, MacAddress},
-        ip::{IpProtocol, Ipv4},
-        raw::Raw,
-        udp::Udp,
-        LayerOwned,
-    },
-    packet::{Packet, PacketParser},
-};
+use nata::prelude::*;
+use std::net::Ipv4Addr;
 
 fn main() {
-    let layers: Vec<LayerOwned> = vec![
-        Box::new(Ether {
-            dst: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]),
-            src: MacAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
-            ether_type: EtherType::IPv4,
-        }),
-        Box::new(Ipv4 {
-            src: 0xc000_0201, // 192.0.2.1
-            dst: 0xc633_6402, // 198.51.100.2
-            ttl: 64,
-            protocol: IpProtocol::UDP,
-            ..Ipv4::default()
-        }),
-        Box::new(Udp {
-            sport: 40_000,
-            dport: 53,
-            ..Udp::default()
-        }),
-        Box::new(Raw {
-            data: b"hello from nata".to_vec(),
-            ..Raw::default()
-        }),
-    ];
+    let mut packet = Packet::builder()
+        .layer(Ether::new(
+            MacAddress::new([0x02, 0, 0, 0, 0, 1]),
+            MacAddress::new([0x02, 0, 0, 0, 0, 2]),
+        ))
+        .layer(
+            Ipv4::new(
+                Ipv4Addr::new(192, 0, 2, 1),
+                Ipv4Addr::new(198, 51, 100, 2),
+            )
+            .protocol(IpProtocol::UDP),
+        )
+        .layer(Udp::new(40_000, 53))
+        .payload(b"hello from nata")
+        .build()
+        .unwrap();
 
-    let mut packet = Packet::from_layers(layers);
-    packet.finalize().unwrap();
+    let bytes = packet.bytes().unwrap();
+    let parsed = parse(&bytes).unwrap();
 
-    let bytes = packet.to_bytes().unwrap();
-    let (rest, parsed) = PacketParser::new().parse_packet::<Ether>(&bytes).unwrap();
-
-    assert!(rest.is_empty());
-    assert_eq!(parsed.layers().len(), 4);
-    assert!(is_layer!(parsed.layers()[0], Ether));
-    assert!(is_layer!(parsed.layers()[1], Ipv4));
-    assert!(is_layer!(parsed.layers()[2], Udp));
-    assert!(is_layer!(parsed.layers()[3], Raw));
+    assert_eq!(parsed.as_ref().len(), 4);
+    assert_eq!("Ether / Ipv4 / Udp / Raw", parsed.summary());
 }
 ```
 
 The same program is available as [`examples/build_packet.rs`](examples/build_packet.rs).
+
+For Scapy-style composition, convert the first layer into a packet and use
+`/` for subsequent layers:
+
+```rust
+let mut packet = Ether::default().into_packet()
+    / Ipv4::default()
+    / Udp::new(40_000, 53)
+    / Raw::new(b"hello");
+
+let bytes = packet.bytes().unwrap();
+```
+
+`packet.get::<Tcp>()`, `packet.get_mut::<Ipv4>()`, `packet.has::<Raw>()`, and
+`packet.as_ref()` provide typed inspection.
+`PacketRef` is a read-only borrowed view; it does not clone or own layers.
+
+`bytes` and `into_bytes` finalize before serializing. The lower-level
+`PacketLayer::to_bytes` method is the implementation hook for custom layers;
+normal packet construction should use the packet methods above. Packet writers
+call `bytes` automatically.
 
 See the [API documentation](https://docs.rs/nata) and
 [examples](https://github.com/sharksforarms/nata/tree/master/examples) for
@@ -103,13 +101,13 @@ custom layers, offline PCAP processing, and live packet capture and injection.
 
 ## Cargo features
 
-Nata enables `std` by default. This provides libpnet interfaces and offline PCAP
-file I/O. Live libpcap support is opt-in.
+Nata enables `std` by default. This provides live interfaces through the default
+libpnet backend and offline PCAP file I/O. Live libpcap support is opt-in.
 
 | Feature | Default | Description |
 | --- | --- | --- |
-| `std` | Yes | Live interfaces through libpnet and offline PCAP file I/O |
-| `libpcap` | No | Live capture and injection through libpcap |
+| `std` | Yes | Live interfaces through the default libpnet backend and offline PCAP file I/O |
+| `libpcap` | No | Select libpcap as the live capture and injection backend |
 
 Enable live libpcap support with:
 
@@ -144,6 +142,17 @@ allocator. See the `example_no_std` fixture.
 ICMPv4/TCP/UDP, and TCP/UDP to raw payload data. Unknown protocols fall back to
 `Raw`. Additional bindings can be registered with `PacketParser::bind_layer`,
 allowing application protocols to participate in the same parsing pipeline.
+For the common typed case, use `Parser::bind`:
+
+```rust
+let parser = Parser::new()
+    .bind::<Tcp, Http>(|tcp, _rest| tcp.dport == 80);
+let packet = parser.parse::<Ether>(&bytes).unwrap();
+```
+
+`parse` requires the input to be fully consumed. Use `parse_partial` when a
+caller needs the remaining bytes. `bind_layer` remains available for advanced
+bindings where the next layer type is selected dynamically.
 
 ## I/O integrations
 
@@ -151,9 +160,30 @@ Packet parsing and construction work directly with byte slices and do not
 require a network interface.
 
 See [`examples/read_write_pcap.rs`](examples/read_write_pcap.rs) for portable,
-offline packet I/O. For live packet I/O, see
-[`examples/spoof_http_server.rs`](examples/spoof_http_server.rs), a minimal HTTP
-server built with packet capture and Ethernet/IPv4/TCP/Raw packet injection.
+offline packet I/O. `PcapFile::open` and `PcapFile::create` provide convenient
+entry points, while `try_iter` preserves read and parse errors.
+
+For live packet I/O, use the backend-neutral `datalink::Interface` API. It
+selects libpcap when the `libpcap` feature is enabled and otherwise uses
+libpnet; application code does not need to name either backend:
+
+```rust,no_run
+use nata::{datalink::Interface, prelude::*};
+
+let mut interface = Interface::open("eth0")?;
+let (mut reader, mut writer) = interface.split();
+
+for packet in reader.try_iter() {
+    writer.send(packet?)?;
+}
+# Ok::<(), nata::datalink::error::DataLinkError>(())
+```
+
+`PcapFile` is for offline capture files. Advanced integrations can implement
+`PacketInterface` and use `BackendInterface` directly. See
+[`examples/spoof_http_server.rs`](examples/spoof_http_server.rs) for a minimal
+live HTTP server built with packet capture and Ethernet/IPv4/TCP/Raw packet
+injection.
 
 ## Development
 

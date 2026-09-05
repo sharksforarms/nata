@@ -5,9 +5,9 @@
 */
 
 use super::IpProtocol;
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 use alloc::{string::ToString, vec::Vec};
-use core::convert::TryFrom;
+use core::{convert::TryFrom, net::Ipv6Addr};
 use deku::prelude::*;
 
 /**
@@ -82,8 +82,43 @@ impl Default for Ipv6 {
     }
 }
 
-impl Layer for Ipv6 {}
-impl LayerExt for Ipv6 {
+impl Ipv6 {
+    /// Construct an IPv6 header with the supplied addresses and packet-safe
+    /// defaults for crafting.
+    pub fn new(src: Ipv6Addr, dst: Ipv6Addr) -> Self {
+        Self {
+            version: 6,
+            src: u128::from(src),
+            dst: u128::from(dst),
+            hop_limit: 64,
+            ..Self::default()
+        }
+    }
+
+    /// Return the source address as an [`Ipv6Addr`].
+    pub fn src_addr(&self) -> Ipv6Addr {
+        Ipv6Addr::from(self.src)
+    }
+
+    /// Return the destination address as an [`Ipv6Addr`].
+    pub fn dst_addr(&self) -> Ipv6Addr {
+        Ipv6Addr::from(self.dst)
+    }
+
+    /// Set the hop-limit field.
+    pub fn hop_limit(mut self, hop_limit: u8) -> Self {
+        self.hop_limit = hop_limit;
+        self
+    }
+
+    /// Set the next-header protocol field.
+    pub fn next_header(mut self, next_header: IpProtocol) -> Self {
+        self.next_header = next_header;
+        self
+    }
+}
+
+impl PacketLayer for Ipv6 {
     fn finalize(&mut self, _prev: &[LayerOwned], next: &[LayerOwned]) -> Result<(), LayerError> {
         // Update length field
         self.length =
@@ -112,7 +147,7 @@ impl LayerExt for Ipv6 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer::{Layer, LayerError, LayerExt};
+    use crate::layer::{LayerError, PacketLayer};
     use alloc::boxed::Box;
     use hexlit::hex;
     use rstest::*;
@@ -127,12 +162,11 @@ mod tests {
                 fn new() -> Self {
                     Self {}
                 }
-                fn boxed() -> Box<dyn LayerExt> {
+                fn boxed() -> Box<dyn PacketLayer> {
                     Box::new(Self {})
                 }
             }
-            impl Layer for $name {}
-            impl LayerExt for $name {
+            impl PacketLayer for $name {
                 fn finalize(
                     &mut self,
                     _prev: &[LayerOwned],

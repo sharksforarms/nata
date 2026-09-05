@@ -15,18 +15,7 @@
 //! sudo iptables -D OUTPUT -p tcp --sport 8080 --tcp-flags RST RST -j DROP
 //! ```
 
-use nata::{
-    datalink::{pcap::Pcap, Interface, PacketWrite},
-    get_layer,
-    layer::{
-        ether::{Ether, EtherType, MacAddress},
-        ip::{IpProtocol, Ipv4},
-        raw::Raw,
-        tcp::{Tcp, TcpFlags},
-        LayerOwned,
-    },
-    packet::Packet,
-};
+use nata::{datalink::Interface, prelude::*};
 use std::{convert::TryFrom, env, net::Ipv4Addr, process};
 
 const DEFAULT_PORT: u16 = 8080;
@@ -75,13 +64,20 @@ fn build_reply(
     request_tcp: &Tcp,
     reply: Reply<'_>,
 ) -> Packet {
-    let mut layers: Vec<LayerOwned> = vec![
-        Box::new(Ether {
+    let Reply {
+        sequence,
+        acknowledgment,
+        flags,
+        payload,
+    } = reply;
+
+    let mut packet = Packet::builder()
+        .layer(Ether {
             dst: request_ether.src.clone(),
             src: server_mac.clone(),
             ether_type: EtherType::IPv4,
-        }),
-        Box::new(Ipv4 {
+        })
+        .layer(Ipv4 {
             src: request_ipv4.dst,
             dst: request_ipv4.src,
             ttl: 64,
@@ -89,28 +85,22 @@ fn build_reply(
             identification: request_ipv4.identification.wrapping_add(1),
             flags: 0b010,
             ..Ipv4::default()
-        }),
-        Box::new(Tcp {
+        })
+        .layer(Tcp {
             sport: request_tcp.dport,
             dport: request_tcp.sport,
-            seq: reply.sequence,
-            ack: reply.acknowledgment,
-            flags: reply.flags,
+            seq: sequence,
+            ack: acknowledgment,
+            flags,
             window: 64_240,
             ..Tcp::default()
-        }),
-    ];
+        });
 
-    if !reply.payload.is_empty() {
-        layers.push(Box::new(Raw {
-            data: reply.payload.to_vec(),
-            ..Raw::default()
-        }));
+    if !payload.is_empty() {
+        packet = packet.payload(payload);
     }
 
-    let mut reply = Packet::from_layers(layers);
-    reply.finalize().expect("failed to finalize reply packet");
-    reply
+    packet.build().expect("failed to finalize reply packet")
 }
 
 fn main() {
@@ -132,7 +122,7 @@ fn main() {
     }
 
     let server_ip = u32::from(server_ip);
-    let mut interface = Interface::init::<Pcap>(&interface_name)
+    let mut interface = Interface::open(&interface_name)
         .unwrap_or_else(|error| panic!("failed to open {}: {:?}", interface_name, error));
     let server_mac = interface
         .mac_address()
@@ -142,23 +132,12 @@ fn main() {
 
     println!("listening on {interface_name}, port {port}");
 
-    for packet in &mut reader {
-        let ether = packet
-            .layers()
-            .iter()
-            .find_map(|layer| get_layer!(layer, Ether));
-        let ipv4 = packet
-            .layers()
-            .iter()
-            .find_map(|layer| get_layer!(layer, Ipv4));
-        let tcp = packet
-            .layers()
-            .iter()
-            .find_map(|layer| get_layer!(layer, Tcp));
-        let raw = packet
-            .layers()
-            .iter()
-            .find_map(|layer| get_layer!(layer, Raw));
+    for packet in reader.try_iter() {
+        let packet = packet.expect("failed to read captured packet");
+        let ether = packet.get::<Ether>();
+        let ipv4 = packet.get::<Ipv4>();
+        let tcp = packet.get::<Tcp>();
+        let raw = packet.get::<Raw>();
 
         let (Some(ether), Some(ipv4), Some(tcp)) = (ether, ipv4, tcp) else {
             continue;
@@ -187,7 +166,7 @@ fn main() {
                     payload: &[],
                 },
             );
-            writer.write(syn_ack).expect("failed to inject SYN-ACK");
+            writer.send(syn_ack).expect("failed to inject SYN-ACK");
             continue;
         }
 
@@ -210,7 +189,7 @@ fn main() {
                 },
             );
             writer
-                .write(response)
+                .send(response)
                 .expect("failed to inject HTTP response");
             println!("served {}:{}", Ipv4Addr::from(ipv4.src), tcp.sport);
         }
@@ -220,7 +199,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nata::packet::PacketParser;
 
     #[test]
     fn builds_parseable_http_response() {
@@ -260,12 +238,11 @@ mod tests {
                 payload: HTTP_RESPONSE,
             },
         );
-        let bytes = reply.to_bytes().unwrap();
-        let (rest, parsed) = PacketParser::new().parse_packet::<Ether>(&bytes).unwrap();
+        let bytes = reply.into_bytes().unwrap();
+        let parsed = parse(&bytes).unwrap();
 
-        assert!(rest.is_empty());
-        let tcp = get_layer!(parsed.layers()[2], Tcp).unwrap();
-        let raw = get_layer!(parsed.layers()[3], Raw).unwrap();
+        let tcp = parsed.get::<Tcp>().unwrap();
+        let raw = parsed.get::<Raw>().unwrap();
         assert_eq!(tcp.sport, DEFAULT_PORT);
         assert_eq!(tcp.dport, 50_000);
         assert_eq!(tcp.flags.ack, 1);

@@ -32,6 +32,26 @@ pub struct PcapFileWriter {
     writer: PcapWriter<File>,
 }
 
+impl PcapFile {
+    /// Open a PCAP file for reading.
+    pub fn open(filename: &str) -> Result<InterfaceReader<PcapFileReader>, DataLinkError> {
+        <Self as PacketInterfaceRead>::init(filename)
+    }
+
+    /// Open a PCAP file for reading with a custom packet parser.
+    pub fn open_with_parser(
+        filename: &str,
+        packet_parser: PacketParser,
+    ) -> Result<InterfaceReader<PcapFileReader>, DataLinkError> {
+        <Self as PacketInterfaceRead>::init_with_parser(filename, packet_parser)
+    }
+
+    /// Create a PCAP file for writing.
+    pub fn create(filename: &str) -> Result<InterfaceWriter<PcapFileWriter>, DataLinkError> {
+        <Self as PacketInterfaceWrite>::init(filename)
+    }
+}
+
 impl PacketInterfaceRead for PcapFile {
     type Reader = PcapFileReader;
 
@@ -59,7 +79,7 @@ impl PacketInterfaceRead for PcapFile {
                     |packet_parser: &PacketParser,
                      i: &[u8]|
                      -> Result<(&[u8], Packet), PacketError> {
-                        packet_parser.parse_packet::<Ether>(i)
+                        packet_parser.parse_partial::<Ether>(i)
                     },
                 );
 
@@ -70,7 +90,7 @@ impl PacketInterfaceRead for PcapFile {
                     |packet_parser: &PacketParser,
                      i: &[u8]|
                      -> Result<(&[u8], Packet), PacketError> {
-                        packet_parser.parse_packet::<Raw>(i)
+                        packet_parser.parse_partial::<Raw>(i)
                     },
                 );
 
@@ -121,8 +141,8 @@ impl PacketRead for PcapFileReader {
 }
 
 impl PacketWrite for PcapFileWriter {
-    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
-        let data = packet.to_bytes()?;
+    fn write(&mut self, mut packet: Packet) -> Result<(), DataLinkError> {
+        let data = packet.bytes()?;
         let data_len = u32::try_from(data.len()).map_err(|_e| {
             DataLinkError::PcapError(format!(
                 "failed to convert packet length {} > {}",

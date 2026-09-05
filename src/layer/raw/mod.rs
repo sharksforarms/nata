@@ -6,7 +6,7 @@ A Raw layer represents un-parsed data or application data such as a UDP payload
 use alloc::vec::Vec;
 use deku::prelude::*;
 
-use crate::layer::{Layer, LayerError, LayerExt, LayerOwned};
+use crate::layer::{LayerError, LayerOwned, PacketLayer};
 
 /// Raw layer
 #[derive(Debug, Default, PartialEq, Clone, DekuRead, DekuWrite)]
@@ -18,8 +18,28 @@ pub struct Raw {
     pub bit_offset: usize,
 }
 
-impl Layer for Raw {}
-impl LayerExt for Raw {
+impl Raw {
+    /// Construct a raw payload by copying the supplied bytes.
+    pub fn new(data: impl AsRef<[u8]>) -> Self {
+        Self {
+            data: data.as_ref().to_vec(),
+            ..Self::default()
+        }
+    }
+
+    /// Return the payload bytes.
+    pub fn payload(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl From<Vec<u8>> for Raw {
+    fn from(data: Vec<u8>) -> Self {
+        Self::new(data)
+    }
+}
+
+impl PacketLayer for Raw {
     fn finalize(&mut self, _prev: &[LayerOwned], _next: &[LayerOwned]) -> Result<(), LayerError> {
         Ok(())
     }
@@ -50,7 +70,7 @@ mod tests {
             data: input.to_vec(),
             bit_offset: 0xFF,
         };
-        let ret_write = LayerExt::to_bytes(&layer).unwrap();
+        let ret_write = PacketLayer::to_bytes(&layer).unwrap();
         assert_eq!(input.to_vec(), ret_write);
     }
 

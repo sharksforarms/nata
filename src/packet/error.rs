@@ -11,6 +11,8 @@ pub enum PacketError {
     Incomplete(usize),
     /// Error parsing a layer
     LayerError(LayerError),
+    /// Strict parsing found trailing bytes after the parsed packet
+    TrailingData(usize),
 }
 
 impl From<LayerError> for PacketError {

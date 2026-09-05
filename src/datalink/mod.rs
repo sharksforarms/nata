@@ -3,47 +3,175 @@ Read and Write packets over an interface
 
 # Interface Types
 
-Some interface types are enabled via crate features.
-
-| Type | Feature | Description
-|-----------|------------------|------------
-| [Pnet] | default | Use [libpnet] cross-platform abstraction over a network interface
-| [Pcap] | libpcap | Use libpcap for I/O on a network interface
-
-[Pnet]: crate::datalink::pnet::Pnet
-[Pcap]: crate::datalink::pcap::Pcap
-[libpnet]: https://github.com/libpnet/libpnet
+[`Interface`] is the backend-neutral API for opening a live network interface.
+The selected capture backend is configured through crate features; applications
+do not need to name it. Use [`pcapfile::PcapFile`] when the resource is an
+offline PCAP file.
 
 # Example
 
+The fallible iterator preserves capture and parse errors:
+
 ```rust,ignore
-let interface = Interface::init::<Pnet>("lo").unwrap();
+use nata::datalink::{Interface, PacketReadExt};
 
-let (mut rx, mut tx) = int.into_split();
+let mut interface = Interface::open("lo").unwrap();
+let (mut reader, _writer) = interface.into_split();
 
-for (_i, pkt) in (&mut rx).enumerate() {
-println!("Packet: {:?}", pkt);
+for packet in reader.try_iter() {
+    println!("Packet: {:?}", packet.unwrap());
 }
 ```
+
+The generic [`BackendInterface`] and [`PacketInterface`] APIs remain available
+for advanced backend integrations.
 */
 
 #[cfg(feature = "libpcap")]
-pub mod pcap;
+pub(crate) mod pcap;
 
 #[cfg(feature = "std")]
 pub mod pcapfile;
 
-#[cfg(feature = "pnet")]
-pub mod pnet;
+#[cfg(all(feature = "pnet", not(feature = "libpcap")))]
+pub(crate) mod pnet;
 
 pub mod error;
 
 use crate::datalink::error::DataLinkError;
 use crate::layer::ether::MacAddress;
 use crate::packet::{Packet, PacketParser};
+use alloc::boxed::Box;
 
-/// A generic Packet interface used to Read and Write packets
-pub struct Interface<R: PacketRead, W: PacketWrite> {
+/// A backend-neutral live network interface.
+pub struct Interface {
+    reader: Box<dyn PacketRead>,
+    writer: Box<dyn PacketWrite>,
+    metadata: InterfaceMetadata,
+}
+
+impl Interface {
+    /// Open a live network interface using the configured capture backend.
+    ///
+    /// When the `libpcap` feature is enabled, libpcap is selected. Otherwise,
+    /// the default libpnet backend is used.
+    pub fn open(interface_name: impl AsRef<str>) -> Result<Self, DataLinkError> {
+        Self::open_with_parser(interface_name, PacketParser::new())
+    }
+
+    /// Open a live network interface with a custom packet parser.
+    pub fn open_with_parser(
+        interface_name: impl AsRef<str>,
+        packet_parser: PacketParser,
+    ) -> Result<Self, DataLinkError> {
+        let interface_name = interface_name.as_ref();
+
+        #[cfg(feature = "libpcap")]
+        {
+            let backend =
+                <pcap::Pcap as PacketInterface>::init_with_parser(interface_name, packet_parser)?;
+            Ok(Self::from_backend(backend))
+        }
+
+        #[cfg(all(not(feature = "libpcap"), feature = "pnet"))]
+        {
+            let backend =
+                <pnet::Pnet as PacketInterface>::init_with_parser(interface_name, packet_parser)?;
+            Ok(Self::from_backend(backend))
+        }
+
+        #[cfg(not(any(feature = "libpcap", feature = "pnet")))]
+        {
+            let _ = (interface_name, packet_parser);
+            Err(DataLinkError::InterfaceNotFound)
+        }
+    }
+
+    fn from_backend<R, W>(backend: BackendInterface<R, W>) -> Self
+    where
+        R: PacketRead + 'static,
+        W: PacketWrite + 'static,
+    {
+        let (reader, writer) = backend.into_split();
+        let metadata = reader.metadata.clone();
+
+        Self {
+            reader: Box::new(reader),
+            writer: Box::new(writer),
+            metadata,
+        }
+    }
+
+    /// Receive one packet.
+    pub fn recv(&mut self) -> Result<Packet, DataLinkError> {
+        self.reader.read()
+    }
+
+    /// Send one packet.
+    pub fn send(&mut self, packet: Packet) -> Result<(), DataLinkError> {
+        self.writer.write(packet)
+    }
+
+    /// Split the interface into borrowed reader and writer handles.
+    pub fn split(
+        &mut self,
+    ) -> (
+        InterfaceReaderRef<'_, dyn PacketRead>,
+        InterfaceWriterRef<'_, dyn PacketWrite>,
+    ) {
+        (
+            InterfaceReaderRef {
+                reader: self.reader.as_mut(),
+                metadata: &self.metadata,
+            },
+            InterfaceWriterRef {
+                writer: self.writer.as_mut(),
+                metadata: &self.metadata,
+            },
+        )
+    }
+
+    /// Split the interface into owned reader and writer handles.
+    #[allow(clippy::type_complexity)]
+    pub fn into_split(
+        self,
+    ) -> (
+        InterfaceReader<Box<dyn PacketRead>>,
+        InterfaceWriter<Box<dyn PacketWrite>>,
+    ) {
+        let metadata = self.metadata;
+        (
+            InterfaceReader {
+                reader: self.reader,
+                metadata: metadata.clone(),
+            },
+            InterfaceWriter {
+                writer: self.writer,
+                metadata,
+            },
+        )
+    }
+
+    /// Get the MAC address of the interface.
+    pub fn mac_address(&self) -> Option<&MacAddress> {
+        self.metadata.mac_address.as_ref()
+    }
+}
+
+impl PacketWrite for Interface {
+    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
+        self.send(packet)
+    }
+}
+
+impl PacketRead for Interface {
+    fn read(&mut self) -> Result<Packet, DataLinkError> {
+        self.recv()
+    }
+}
+
+/// Advanced generic interface wrapper for custom backend integrations.
+pub struct BackendInterface<R: PacketRead, W: PacketWrite> {
     reader: R,
     writer: W,
     metadata: InterfaceMetadata,
@@ -54,29 +182,47 @@ struct InterfaceMetadata {
     mac_address: Option<MacAddress>,
 }
 
-impl<R: PacketRead, W: PacketWrite> Interface<R, W> {
-    /// Initialize read/write interface
+impl<R: PacketRead, W: PacketWrite> BackendInterface<R, W> {
+    /// Construct an interface from custom reader and writer implementations.
+    pub fn new(reader: R, writer: W) -> Self {
+        Self {
+            reader,
+            writer,
+            metadata: InterfaceMetadata::default(),
+        }
+    }
+
+    /// Construct an interface with an optional MAC address.
+    pub fn with_mac_address(reader: R, writer: W, mac_address: Option<MacAddress>) -> Self {
+        Self {
+            reader,
+            writer,
+            metadata: InterfaceMetadata { mac_address },
+        }
+    }
+
+    /// Initialize a backend-specific read/write interface.
     pub fn init<T: PacketInterface<Reader = R, Writer = W>>(
         name: &str,
-    ) -> Result<Interface<T::Reader, T::Writer>, DataLinkError>
+    ) -> Result<BackendInterface<T::Reader, T::Writer>, DataLinkError>
     where
         Self: Sized,
     {
         T::init(name)
     }
 
-    /// Initialize read/write interface with a custom parser
+    /// Initialize a backend-specific read/write interface with a custom parser.
     pub fn init_with_parser<T: PacketInterface>(
         name: &str,
         packet_parser: PacketParser,
-    ) -> Result<Interface<T::Reader, T::Writer>, DataLinkError>
+    ) -> Result<BackendInterface<T::Reader, T::Writer>, DataLinkError>
     where
         Self: Sized,
     {
         T::init_with_parser(name, packet_parser)
     }
 
-    /// Split interface into referenced read and write interfaces
+    /// Split the backend interface into borrowed reader and writer handles.
     pub fn split(&mut self) -> (InterfaceReaderRef<'_, R>, InterfaceWriterRef<'_, W>) {
         (
             InterfaceReaderRef {
@@ -90,7 +236,7 @@ impl<R: PacketRead, W: PacketWrite> Interface<R, W> {
         )
     }
 
-    /// Split interface into owned read and write interfaces
+    /// Split the backend interface into owned reader and writer handles.
     pub fn into_split(self) -> (InterfaceReader<R>, InterfaceWriter<W>) {
         (
             InterfaceReader {
@@ -104,19 +250,19 @@ impl<R: PacketRead, W: PacketWrite> Interface<R, W> {
         )
     }
 
-    /// Get the mac address of the interface
+    /// Get the MAC address of the interface.
     pub fn mac_address(&self) -> Option<&MacAddress> {
         self.metadata.mac_address.as_ref()
     }
 }
 
-impl<R: PacketRead, W: PacketWrite> PacketWrite for Interface<R, W> {
+impl<R: PacketRead, W: PacketWrite> PacketWrite for BackendInterface<R, W> {
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
         self.writer.write(packet)
     }
 }
 
-impl<R: PacketRead, W: PacketWrite> PacketRead for Interface<R, W> {
+impl<R: PacketRead, W: PacketWrite> PacketRead for BackendInterface<R, W> {
     fn read(&mut self) -> Result<Packet, DataLinkError> {
         self.reader.read()
     }
@@ -132,7 +278,7 @@ pub trait PacketInterface {
     /// Initialization of an interface
     ///
     /// `name` could be a network interface, device id, pcap filename, etc.
-    fn init(name: &str) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError>
+    fn init(name: &str) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError>
     where
         Self: Sized;
 
@@ -142,7 +288,7 @@ pub trait PacketInterface {
     fn init_with_parser(
         name: &str,
         packet_parser: PacketParser,
-    ) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError>
+    ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError>
     where
         Self: Sized;
 }
@@ -185,35 +331,80 @@ pub trait PacketInterfaceWrite {
 
 /// Packet read on an interface
 pub trait PacketRead {
-    /// Read packet
+    /// Read one packet.
+    ///
+    /// Implementations use [`DataLinkError::Eof`] to signal a normal end of a
+    /// finite source such as a PCAP file.
     fn read(&mut self) -> Result<Packet, DataLinkError>;
+
+    /// Read the next packet, treating end-of-file as a normal end of stream.
+    fn next_packet(&mut self) -> Result<Option<Packet>, DataLinkError> {
+        match self.read() {
+            Ok(packet) => Ok(Some(packet)),
+            Err(DataLinkError::Eof) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// Extension methods for fallible packet iteration.
+pub trait PacketReadExt: PacketRead {
+    /// Iterate over packets while preserving read and parse errors.
+    fn try_iter(&mut self) -> impl Iterator<Item = Result<Packet, DataLinkError>> + '_
+    where
+        Self: Sized,
+    {
+        PacketTryIter { reader: self }
+    }
+}
+
+impl<T: PacketRead + ?Sized> PacketReadExt for T {}
+
+impl<T: PacketRead + ?Sized> PacketRead for Box<T> {
+    fn read(&mut self) -> Result<Packet, DataLinkError> {
+        (**self).read()
+    }
+}
+
+/// A fallible packet iterator backed by a [`PacketRead`] implementation.
+struct PacketTryIter<'a, R: PacketRead + ?Sized> {
+    reader: &'a mut R,
+}
+
+impl<R: PacketRead + ?Sized> Iterator for PacketTryIter<'_, R> {
+    type Item = Result<Packet, DataLinkError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.reader.next_packet() {
+            Ok(Some(packet)) => Some(Ok(packet)),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        }
+    }
 }
 
 /// Packet write on an interface
 pub trait PacketWrite {
-    /// Write packet
+    /// Write one packet, finalizing it before serialization in the built-in
+    /// backends.
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError>;
-}
 
-/// Unimplemented packet writer
-pub struct UnimplementedWriter;
-impl PacketWrite for UnimplementedWriter {
-    fn write(&mut self, _packet: Packet) -> Result<(), DataLinkError> {
-        unimplemented!()
+    /// Send a packet.
+    fn send(&mut self, packet: Packet) -> Result<(), DataLinkError> {
+        self.write(packet)
     }
 }
-/// Unimplemented packet reader
-pub struct UnimplementedReader;
-impl PacketRead for UnimplementedReader {
-    fn read(&mut self) -> Result<Packet, DataLinkError> {
-        unimplemented!()
+
+impl<T: PacketWrite + ?Sized> PacketWrite for Box<T> {
+    fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
+        (**self).write(packet)
     }
 }
 
 /// Reference to read-only interface
 pub struct InterfaceReaderRef<'a, T>
 where
-    T: PacketRead,
+    T: PacketRead + ?Sized,
 {
     reader: &'a mut T,
     metadata: &'a InterfaceMetadata,
@@ -221,7 +412,7 @@ where
 
 impl<'a, T> InterfaceReaderRef<'a, T>
 where
-    T: PacketRead,
+    T: PacketRead + ?Sized,
 {
     /// Get the mac address of the interface
     pub fn mac_address(&self) -> Option<&MacAddress> {
@@ -232,7 +423,7 @@ where
 /// Reference to write-only interface
 pub struct InterfaceWriterRef<'a, T>
 where
-    T: PacketWrite,
+    T: PacketWrite + ?Sized,
 {
     writer: &'a mut T,
     metadata: &'a InterfaceMetadata,
@@ -240,7 +431,7 @@ where
 
 impl<'a, T> InterfaceWriterRef<'a, T>
 where
-    T: PacketWrite,
+    T: PacketWrite + ?Sized,
 {
     /// Get the mac address of the interface
     pub fn mac_address(&self) -> Option<&MacAddress> {
@@ -317,7 +508,7 @@ where
     }
 }
 
-impl<'a, T: PacketRead> PacketRead for InterfaceReaderRef<'a, T> {
+impl<'a, T: PacketRead + ?Sized> PacketRead for InterfaceReaderRef<'a, T> {
     fn read(&mut self) -> Result<Packet, DataLinkError> {
         self.reader.read()
     }
@@ -329,7 +520,7 @@ impl<T: PacketRead> PacketRead for InterfaceReader<T> {
     }
 }
 
-impl<'a, T: PacketWrite> PacketWrite for InterfaceWriterRef<'a, T> {
+impl<'a, T: PacketWrite + ?Sized> PacketWrite for InterfaceWriterRef<'a, T> {
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
         self.writer.write(packet)
     }
@@ -338,30 +529,6 @@ impl<'a, T: PacketWrite> PacketWrite for InterfaceWriterRef<'a, T> {
 impl<T: PacketWrite> PacketWrite for InterfaceWriter<T> {
     fn write(&mut self, packet: Packet) -> Result<(), DataLinkError> {
         self.writer.write(packet)
-    }
-}
-
-impl<R: PacketRead, W: PacketWrite> Iterator for Interface<R, W> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
-    }
-}
-
-impl<T: PacketRead> Iterator for InterfaceReaderRef<'_, T> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
-    }
-}
-
-impl<T: PacketRead> Iterator for InterfaceReader<T> {
-    type Item = Packet;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.read().ok()
     }
 }
 
@@ -390,7 +557,7 @@ mod tests {
         type Reader = DummyReader;
         type Writer = DummyWriter;
 
-        fn init(name: &str) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError>
+        fn init(name: &str) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError>
         where
             Self: Sized,
         {
@@ -400,11 +567,11 @@ mod tests {
         fn init_with_parser(
             _name: &str,
             packet_parser: PacketParser,
-        ) -> Result<Interface<Self::Reader, Self::Writer>, DataLinkError>
+        ) -> Result<BackendInterface<Self::Reader, Self::Writer>, DataLinkError>
         where
             Self: Sized,
         {
-            Ok(Interface {
+            Ok(BackendInterface {
                 reader: DummyReader { packet_parser },
                 writer: DummyWriter { write_count: 0 },
                 metadata: InterfaceMetadata { mac_address: None },
@@ -463,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_interface_default() {
-        let mut interface = Interface::init::<DummyInterface>("test").unwrap();
+        let mut interface = BackendInterface::init::<DummyInterface>("test").unwrap();
         let pkt = interface.read().unwrap();
         interface.write(pkt).unwrap();
 
@@ -487,7 +654,7 @@ mod tests {
 
     #[test]
     fn test_interface_split_ref() {
-        let mut interface = Interface::init::<DummyInterface>("test").unwrap();
+        let mut interface = BackendInterface::init::<DummyInterface>("test").unwrap();
         let (mut reader, mut writer) = interface.split();
 
         let pkt = reader.read().unwrap();
@@ -498,7 +665,7 @@ mod tests {
 
     #[test]
     fn test_interface_split_owned() {
-        let interface = Interface::init::<DummyInterface>("test").unwrap();
+        let interface = BackendInterface::init::<DummyInterface>("test").unwrap();
         let (mut reader, mut writer) = interface.into_split();
 
         let pkt = reader.read().unwrap();
@@ -508,21 +675,64 @@ mod tests {
     }
 
     #[test]
-    fn test_interface_iter() {
-        let mut interface = Interface::init::<DummyInterface>("test").unwrap();
-        assert!(interface.next().is_some());
+    fn test_interface_try_iter() {
+        let mut interface = BackendInterface::init::<DummyInterface>("test").unwrap();
+        assert!(matches!(interface.try_iter().next(), Some(Ok(_))));
     }
 
     #[test]
-    fn test_interface_reader_iter() {
+    fn test_interface_reader_try_iter() {
         let mut interface = InterfaceReader::init::<DummyInterface>("test").unwrap();
-        assert!(interface.next().is_some());
+        assert!(matches!(interface.try_iter().next(), Some(Ok(_))));
     }
 
     #[test]
-    fn test_interface_reader_ref_iter() {
-        let mut interface = Interface::init::<DummyInterface>("test").unwrap();
+    fn test_interface_reader_ref_try_iter() {
+        let mut interface = BackendInterface::init::<DummyInterface>("test").unwrap();
         let (mut reader, _writer) = interface.split();
-        assert!(reader.next().is_some());
+        assert!(matches!(reader.try_iter().next(), Some(Ok(_))));
+    }
+
+    struct EofReader {
+        yielded: bool,
+    }
+
+    impl PacketRead for EofReader {
+        fn read(&mut self) -> Result<Packet, DataLinkError> {
+            if self.yielded {
+                Err(DataLinkError::Eof)
+            } else {
+                self.yielded = true;
+                Ok(Packet::new())
+            }
+        }
+    }
+
+    struct ErrorReader;
+
+    impl PacketRead for ErrorReader {
+        fn read(&mut self) -> Result<Packet, DataLinkError> {
+            Err(DataLinkError::BufferError)
+        }
+    }
+
+    #[test]
+    fn test_packet_try_iter_stops_at_eof() {
+        let mut reader = EofReader { yielded: false };
+        let mut packets = reader.try_iter();
+
+        assert!(matches!(packets.next(), Some(Ok(_))));
+        assert!(packets.next().is_none());
+    }
+
+    #[test]
+    fn test_packet_try_iter_preserves_errors() {
+        let mut reader = ErrorReader;
+        let mut packets = reader.try_iter();
+
+        assert!(matches!(
+            packets.next(),
+            Some(Err(DataLinkError::BufferError))
+        ));
     }
 }
