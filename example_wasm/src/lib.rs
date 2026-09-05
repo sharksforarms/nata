@@ -64,7 +64,7 @@ fn read_packets_debug(input: &[u8]) -> Result<String, String> {
 
         let (unparsed, packet) =
             parse_captured_packet(&packet_parser, header.datalink, &captured.data)
-            .map_err(|error| format!("Could not decode packet {packet_count}: {error:?}"))?;
+                .map_err(|error| format!("Could not decode packet {packet_count}: {error:?}"))?;
 
         writeln!(
             &mut output,
