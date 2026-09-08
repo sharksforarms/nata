@@ -10,15 +10,18 @@ ARG BETA_TOOLCHAIN=beta
 ARG JUST_VERSION=1.58.0
 ARG WASM_PACK_VERSION=0.15.0
 ARG CARGO_LLVM_COV_VERSION=0.8.7
+ARG TSHARK_VERSION=4.0.17-0+deb12u3
 ARG USER_UID=1000
 ARG USER_GID=1000
 
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        git \
         libpcap-dev \
         pkg-config \
+        tshark=${TSHARK_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup toolchain install "${MSRV_TOOLCHAIN}" --profile minimal \

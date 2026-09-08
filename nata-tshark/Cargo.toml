@@ -1,0 +1,16 @@
+[package]
+name = "nata-tshark"
+version = "0.1.0"
+edition = "2018"
+rust-version = "1.88"
+license = "MIT or Apache-2.0"
+repository = "https://github.com/sharksforarms/nata"
+description = "TShark JSON compatibility harness for Nata"
+publish = false
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+deku = "0.20"
+nata = { path = "..", default-features = false, features = ["std"] }
+pcap-file = "2.0"
+serde_json = "1"
